@@ -3,6 +3,7 @@ import dlib
 from imutils import face_utils
 from PIL import Image
 import threading
+import numpy as np
 
 class camera():
 	"""

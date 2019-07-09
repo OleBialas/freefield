@@ -67,7 +67,7 @@ class camera():
 		while count>0:
 			_, angles= self._get_angles()
 			x+= angles[0, 0]
-			y+= angles[1, 0]
+			y+= angles[1, 0]g
 			z+= angles[2, 0]
 			count-=1
 		return x/n, y/n, z/n

@@ -28,14 +28,15 @@ def set_setup(setup='arc'):
 	Set the freefield setup to use (arc or dome).
 	'''
 	global _device, _calibration_file, _calibration_filter, _speakertable
+	print(os.getcwd())
 	if setup == 'arc':
 		_setup = 'arc'
 		_calibration_file = 'calibration_filter_arc.npy'
-		_speakertable = _read_table('speakertable_arc.txt')
+		_speakertable = _read_table(os.path.join(os.getcwd(),"data",'speakertable_arc.txt'))
 	elif setup == 'dome':
 		_setup = 'dome'
 		_calibration_file = 'calibration_filter_dome.npy'
-		_speakertable = _read_table('speakertable_dome.txt')
+		_speakertable = _read_table(os.path.join(os.getcwd(),"data",'speakertable_dome.txt'))
 	else:
 		raise ValueError("Unknown device! Use 'arc' or 'dome'.")
 	_calibration_filter =  "load filter here"#slab.Filter.load(_calibration_file)

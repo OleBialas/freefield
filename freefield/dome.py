@@ -16,29 +16,28 @@ import os
 
 # internal variables here:
 _procs = dict(RX81=None, RX82=None, RP2=None, ZBus=None) # dict might be better because you can call objects with a string
-# Use like so: _procs.RX81, _procs.RX82, ...
-_setup = None # ('arc' or 'dome')
-_calibration_file = None
+_setup = None
 _calibration_filter = None
 _speakertable = None
-
+_location_ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 def set_setup(setup='arc'):
 	'''
 	Set the freefield setup to use (arc or dome).
 	'''
 	global _device, _calibration_file, _calibration_filter, _speakertable
-	print(os.getcwd())
 	if setup == 'arc':
 		_setup = 'arc'
-		_calibration_file = 'calibration_filter_arc.npy'
-		_speakertable = _read_table(os.path.join(os.getcwd(),"data",'speakertable_arc.txt'))
+		calibration_file = os.path.join(_location_,'calibration_filter_arc.npy')
+		table_file = os.path.join(_location_,'speakertable_arc.csv')
 	elif setup == 'dome':
 		_setup = 'dome'
-		_calibration_file = 'calibration_filter_dome.npy'
-		_speakertable = _read_table(os.path.join(os.getcwd(),"data",'speakertable_dome.txt'))
+		calibration_file = os.path.join(_location_,'calibration_filter_dome.npy')
+		table_file = os.path.join(_location_,'speakertable_dome.csv')
 	else:
 		raise ValueError("Unknown device! Use 'arc' or 'dome'.")
+
+	_speakertable = _read_table(table_file)
 	_calibration_filter =  "load filter here"#slab.Filter.load(_calibration_file)
 
 def initialize_devices(rcx_file_name_RX8_1=None, rcx_file_name_RX8_2=None, rcx_file_name_RP2=None, ZBus=False):

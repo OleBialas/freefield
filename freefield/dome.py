@@ -20,6 +20,8 @@ _setup = None
 _calibration_filter = None
 _speakertable = None
 _location_ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(os.path.dirname(__file__))))
+print(__file__)
+print(_location_)
 
 def set_setup(setup='arc'):
 	'''

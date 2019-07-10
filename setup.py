@@ -1,9 +1,9 @@
 from distutils.core import setup
 
 setup(
-    name='FreefieldToolbox',
+    name='freefield_toolbox',
     version='0.1dev',
-    packages=['FreefieldToolbox'],
+    packages=['freefield_toolbox'],
     license='Creative Commons Attribution-Noncommercial-Share Alike license',
     long_description=open('README.txt').read(),
 )

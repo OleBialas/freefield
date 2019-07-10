@@ -19,7 +19,7 @@ _procs = dict(RX81=None, RX82=None, RP2=None, ZBus=None) # dict might be better 
 _setup = None
 _calibration_filter = None
 _speakertable = None
-_location_ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+_location_ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(os.path.dirname(__file__))))
 
 def set_setup(setup='arc'):
 	'''
@@ -29,11 +29,11 @@ def set_setup(setup='arc'):
 	if setup == 'arc':
 		_setup = 'arc'
 		calibration_file = os.path.join(_location_,'calibration_filter_arc.npy')
-		table_file = os.path.join(_location_,'speakertable_arc.csv')
+		table_file = os.path.join(_location_,"data",'speakertable_arc.csv')
 	elif setup == 'dome':
 		_setup = 'dome'
 		calibration_file = os.path.join(_location_,'calibration_filter_dome.npy')
-		table_file = os.path.join(_location_,'speakertable_dome.csv')
+		table_file = os.path.join(_location_,"data,"'speakertable_dome.csv')
 	else:
 		raise ValueError("Unknown device! Use 'arc' or 'dome'.")
 

@@ -1,2 +1,3 @@
+include README.txt
 include freefield_toolbox/speakertable_arc.csv
 include freefield_toolbox/speakertable_dome.csv

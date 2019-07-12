@@ -8,11 +8,15 @@ import win32com.client
 import csv
 import numpy as np
 import os
+import time
 
 # thoughts on the software architecture:
 # Ideally, ZB, RX8, and RP2 are internal variables that the user never needs to use directly (but we can if needed). We would not need a freefield class for this, because there can never be more than one instance anyway.
 # set_device function should be called in the beginning to choose arc or dome. Internal variables _calibration_filter and _speakertable are set accordingly. Other functions should not need to read the _device variable.
 # provide functions for reading (or waiting for!) response from button box, flashlight, and headtracker
+
+#Ole: Buffers etc. need to be adressed via tags. We probably should set defaults for the names but allow
+# different tag names as inputs
 
 # internal variables here:
 _procs = dict(RX81=None, RX82=None, RP2=None, ZBus=None) # dict might be better because you can call objects with a string
@@ -119,24 +123,28 @@ def trigger(trig='zBusA', proc=None):
 	else:
 		raise ValueError("Unknown trigger type! Must be 'soft', 'zBusA' or 'zBusB'!")
 
-def wait_to_finish_playing():
+def wait_to_finish_playing(proc="all", tagname="playback"):
 	'''
-	Wait for a signal from a buffer in RX81 to end playing.
-	Relies on 'playing' tag attached to Schmidt trigger.
+	Busy wait as long as sound is played from the processors. The .rco file must
+	contain a tag that has the value 1 while sound is being played and 0
+	otherwise. By default, this tag is refered to as "playback".
 	'''
-	while get(variable='playing'):
-		# pause 0.01 secs
-		pass
+	if proc="all":
+		while any(get(variable=tagname, n_samples=1, proc=p) for proc in _procs.keys()):
+			time.sleep(0.01)
+	else:
+		while get(variable=tagname, n_samples=1, proc=proc):
+			time.sleep(0.01)
 
 def speaker_from_direction(azimuth=0, elevation=0):
 	'''
-	Returns the speaker number corresponding to a given azimuth and elevation
-	and the processor that speaker is attached to.
+	Returns the channel and processor that the speaker at a given azimuth
+	and elevation is attached to.
 	'''
 	table = filter_table(azimuth=[str(azimuth)], elevation=[str(elevation)])
 	proc = table["proc"]
-	speaker = table["index"]
-	return speaker, proc
+	channel = table["index"]
+	return channel, proc
 
 # other functions to access the freefield table here
 def _read_table(fname):
@@ -154,6 +162,7 @@ def _read_table(fname):
 def filter_table(**kwargs):
 	"""
 	Read table and filter for keyword arguments. Only accepts lists of strings.
+	TODO: should result in an error instead of returning empty lists.
 	"""
 	table=_speakertable
 	if len(kwargs)==0:
@@ -168,6 +177,7 @@ def filter_table(**kwargs):
 				for key in table.keys():
 					tmp[key].append(table[key][j])
 		table = tmp
+
 	return table
 
 def set_signal_and_speaker(signal=None, speaker_number=0, apply_calibration=True):

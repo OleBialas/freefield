@@ -24,8 +24,6 @@ _setup = None
 _calibration_filter = None
 _speakertable = None
 _location_ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
-print(__file__)
-print(_location_)
 
 def set_setup(setup='arc'):
 	'''
@@ -129,7 +127,7 @@ def wait_to_finish_playing(proc="all", tagname="playback"):
 	contain a tag that has the value 1 while sound is being played and 0
 	otherwise. By default, this tag is refered to as "playback".
 	'''
-	if proc="all":
+	if proc=="all":
 		while any(get(variable=tagname, n_samples=1, proc=p) for proc in _procs.keys()):
 			time.sleep(0.01)
 	else:

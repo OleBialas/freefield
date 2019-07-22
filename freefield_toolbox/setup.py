@@ -15,8 +15,6 @@ import time
 # set_device function should be called in the beginning to choose arc or dome. Internal variables _calibration_filter and _speakertable are set accordingly. Other functions should not need to read the _device variable.
 # provide functions for reading (or waiting for!) response from button box, flashlight, and headtracker
 
-#Ole: Buffers etc. need to be adressed via tags. We probably should set defaults for the names but allow
-# different tag names as inputs
 
 # internal variables here:
 #TODO: Einheitliche Namen!
@@ -48,17 +46,17 @@ def set_setup(setup='arc'):
 
 def initialize_devices(rcx_file_name_RX8_1=None, rcx_file_name_RX8_2=None, rcx_file_name_RP2=None, ZBus=False):
 	'''
-	Initialize the ZBus, RX8s, and RP2. TODO: dont try loading if file=None
+	Initialize the ZBus, RX8s, and RP2.
 	'''
 	global _procs
 	if not _setup:
 		raise ValueError("Please set device to 'arc' or 'dome' before initialization!")
 
-	if rcx_file_name_RX8_1:
+	if rcx_file_name_RX8_1 is not None:
 		_procs["RX8_1"] = _initialize_processor("RX8", rcx_file_name_RX8_1, 1)
-	if rcx_file_name_RX8_2:
+	if rcx_file_name_RX8_2 is not None:
 		_procs["RX8_2"] = _initialize_processor("RX8", rcx_file_name_RX8_2, 2)
-	if rcx_file_name_RX8_2:
+	if rcx_file_name_RX8_2 is not None:
 		_procs["RP2"] = _initialize_processor("RP2", rcx_file_name_RP2, 1)
 	if ZBus:
 		_procs["ZBus"] = _initialize_zbus()
@@ -68,19 +66,28 @@ def set(variable, value, proc='RX8s'):
 	Set a variable on a processor to a value. Setting will silently fail if
 	variable does not exist in the rco file. The function will use SetTagVal
 	or WriteTagV correctly, depending on whether len(value) == 1 or is > 1.
-	proc can be 'RX81', 'RX82', 'RX8s', or 'RP2'. 'RX8s' sends the value to
+	proc can be 'RX81', 'RX82', 'RP2', 'RX8s' or 'all'. 'RX8s' sends the value to
 	all RX8 processors.
 	Example:
 	set('stimdur', 90, proc='RX8s')
-	TODO: Set variable for multiple processors in one call
 	'''
-	if type(value) == list or type(value) == np.ndarray:
-		_procs[proc]._oleobj_.InvokeTypes(15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)), variable, 0, value) # = WriteTagV
+	if proc.lower()=="RX8s":
+		procs==["RX8_1", "RX8_2"]
+	elif proc=="all"
+		procs==["RX8_1", "RX8_2", "RP2"]
+	elif proc=="RX8_1" or proc=="RX8_2" or proc=="RP2":
+		procs=[proc]
 	else:
-		_procs[proc].SetTagVal(variable, value)
-	pass
+		raise ValueError(proc+' is an improper value for proc. Possible values are: "all", "RX8s", "RX8_1", "RX8_2 or "RP2"')
+	for p in procs:
+		if type(value) == list or type(value) == np.ndarray:
+			if not _procs[p]._oleobj_.InvokeTypes(15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)), variable, 0, value):
+				raise ValueError("writing to tag %s on %s failed!""%(variable, p))
+		else:
+			if not _procs[p].SetTagVal(variable, value):
+				raise ValueError("writing to tag %s on %s failed!""%(variable, p))
 
-def get(variable=None,n_samples=1, proc='RX81'):
+def get(variable,n_samples=1, proc='RX81'):
 	'''
 	Get the value of a variable from a processor. Returns None if variable
 	does not exist in the rco file. [Can we get single items and arrays automatically?]
@@ -100,9 +107,12 @@ def halt(proc="all"):
 	'''
 	if proc=="all":
 		for p in _procs.values():
-			p.Halt()
+			if p.Halt():
+				print("Halting "+p)
 	else:
 		_procs[proc].Halt()
+			if p.Halt():
+				print("Halting "+p)
 	pass
 
 def trigger(trig='zBusA', proc=None):
@@ -114,13 +124,16 @@ def trigger(trig='zBusA', proc=None):
 	if 'soft' in trig.lower():
 		if not proc:
 			raise ValueError('Proc needs to be specified for SoftTrig!')
-		_procs[proc].SoftTrg()
+		if _procs[proc].SoftTrg()
+			print("sending software trigger to "+proc)
 	if "zbus" in trig.lower() and not _procs["ZBus"]:
 		raise ValueError('ZBus needs to be initialized first!')
 	if trig.lower()=="zbusa":
-		_procs["ZBus"].zBusTrigA(0, 0, 20)
+		if _procs["ZBus"].zBusTrigA(0, 0, 20):
+			print("sending trigger via ZBus-A")
 	elif trig.lower()=="zbusb":
-		_procs["Zbus"].zBusTrigB(0, 0, 20)
+		if _procs["ZBus"].zBusTrigB(0, 0, 20):
+			print("sending trigger via ZBus-B")
 	else:
 		raise ValueError("Unknown trigger type! Must be 'soft', 'zBusA' or 'zBusB'!")
 

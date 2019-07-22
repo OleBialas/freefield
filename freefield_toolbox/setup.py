@@ -19,7 +19,9 @@ import time
 # different tag names as inputs
 
 # internal variables here:
-_procs = dict(RX81=None, RX82=None, RP2=None, ZBus=None) # dict might be better because you can call objects with a string
+#TODO: Einheitliche Namen!
+#TODO: Feedback from functions
+_procs = dict(RX8_1=None, RX8_2=None, RP2=None, ZBus=None) # dict might be better because you can call objects with a string
 _setup = None
 _calibration_filter = None
 _speakertable = None
@@ -29,11 +31,11 @@ def set_setup(setup='arc'):
 	'''
 	Set the freefield setup to use (arc or dome).
 	'''
-	global _device, _calibration_file, _calibration_filter, _speakertable
+	global _setup, _calibration_file, _calibration_filter, _speakertable
 	if setup == 'arc':
 		_setup = 'arc'
 		calibration_file = os.path.join(_location_,'calibration_filter_arc.npy')
-			table_file = os.path.join(_location_,'speakertable_arc.csv')
+		table_file = os.path.join(_location_,'speakertable_arc.csv')
 	elif setup == 'dome':
 		_setup = 'dome'
 		calibration_file = os.path.join(_location_,'calibration_filter_dome.npy')
@@ -46,19 +48,19 @@ def set_setup(setup='arc'):
 
 def initialize_devices(rcx_file_name_RX8_1=None, rcx_file_name_RX8_2=None, rcx_file_name_RP2=None, ZBus=False):
 	'''
-	Initialize the ZBus, RX8s, and RP2.
+	Initialize the ZBus, RX8s, and RP2. TODO: dont try loading if file=None
 	'''
 	global _procs
 	if not _setup:
 		raise ValueError("Please set device to 'arc' or 'dome' before initialization!")
 
 	if rcx_file_name_RX8_1:
-		_procs["RX81"] = _initialize_processor("RX8", rcx_file_name_RX8_1, 1)
+		_procs["RX8_1"] = _initialize_processor("RX8", rcx_file_name_RX8_1, 1)
 	if rcx_file_name_RX8_2:
-		_procs["RX82"] = _initialize_processor("RX8", rcx_file_name_RX8_2, 2)
+		_procs["RX8_2"] = _initialize_processor("RX8", rcx_file_name_RX8_2, 2)
 	if rcx_file_name_RX8_2:
 		_procs["RP2"] = _initialize_processor("RP2", rcx_file_name_RP2, 1)
-	if Zbus:
+	if ZBus:
 		_procs["ZBus"] = _initialize_zbus()
 
 def set(variable, value, proc='RX8s'):
@@ -70,6 +72,7 @@ def set(variable, value, proc='RX8s'):
 	all RX8 processors.
 	Example:
 	set('stimdur', 90, proc='RX8s')
+	TODO: Set variable for multiple processors in one call
 	'''
 	if type(value) == list or type(value) == np.ndarray:
 		_procs[proc]._oleobj_.InvokeTypes(15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)), variable, 0, value) # = WriteTagV
@@ -115,9 +118,9 @@ def trigger(trig='zBusA', proc=None):
 	if "zbus" in trig.lower() and not _procs["ZBus"]:
 		raise ValueError('ZBus needs to be initialized first!')
 	if trig.lower()=="zbusa":
-		_procs["ZBUS"].zBusTrigA(0, 0, 20)
+		_procs["ZBus"].zBusTrigA(0, 0, 20)
 	elif trig.lower()=="zbusb":
-		_procs["ZBUS"].zBusTrigB(0, 0, 20)
+		_procs["Zbus"].zBusTrigB(0, 0, 20)
 	else:
 		raise ValueError("Unknown trigger type! Must be 'soft', 'zBusA' or 'zBusB'!")
 
@@ -134,7 +137,7 @@ def wait_to_finish_playing(proc="all", tagname="playback"):
 		while get(variable=tagname, n_samples=1, proc=proc):
 			time.sleep(0.01)
 
-def speaker_from_direction(azimuth=0, elevation=0):
+def get_speaker_from_direction(azimuth=0, elevation=0):
 	'''
 	Returns the channel and processor that the speaker at a given azimuth
 	and elevation is attached to.
@@ -142,7 +145,13 @@ def speaker_from_direction(azimuth=0, elevation=0):
 	table = filter_table(azimuth=[str(azimuth)], elevation=[str(elevation)])
 	proc = table["proc"]
 	channel = table["index"]
-	return channel, proc
+	return channel[0], proc[0]
+
+def get_speaker_from_number(number):
+	table = filter_table(ongoing=[str(number)])
+	proc = table["proc"]
+	channel = table["index"]
+	return channel[0], proc[0]
 
 # other functions to access the freefield table here
 def _read_table(fname):
@@ -228,12 +237,12 @@ def _initialize_processor(device_type, rcx_file, index, connection="GB"):
 	if device_type == "RP2":
 		if RP.ConnectRP2(connection, index):
 			print("Connected to RP2")
-		elif device_type == "RX8":
-			if RP.ConnectRX8(connection, index):
-				print("Connected to RX8")
-		else:
-			print("Error: unknown device type!")
-			return -1
+	elif device_type == "RX8":
+		if RP.ConnectRX8(connection, index):
+			print("Connected to RX8")
+	else:
+		print("Error: unknown device type!")
+		return -1
 
 	if not RP.ClearCOF():
 		print("ClearCOF failed")

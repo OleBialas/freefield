@@ -33,7 +33,7 @@ def set_setup(setup='arc'):
 	if setup == 'arc':
 		_setup = 'arc'
 		calibration_file = os.path.join(_location_,'calibration_filter_arc.npy')
-		table_file = os.path.join(_location_,'speakertable_arc.csv')
+			table_file = os.path.join(_location_,'speakertable_arc.csv')
 	elif setup == 'dome':
 		_setup = 'dome'
 		calibration_file = os.path.join(_location_,'calibration_filter_dome.npy')
@@ -49,7 +49,7 @@ def initialize_devices(rcx_file_name_RX8_1=None, rcx_file_name_RX8_2=None, rcx_f
 	Initialize the ZBus, RX8s, and RP2.
 	'''
 	global _procs
-	if not _device:
+	if not _setup:
 		raise ValueError("Please set device to 'arc' or 'dome' before initialization!")
 
 	if rcx_file_name_RX8_1:

@@ -3,3 +3,4 @@ include freefield_toolbox/speakertable_arc.csv
 include freefield_toolbox/speakertable_dome.csv
 include freefield_toolbox/calib.jpg
 include freefield_toolbox/shape_predictor_68_face_landmarks.dat
+include example/*

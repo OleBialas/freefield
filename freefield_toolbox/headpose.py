@@ -4,6 +4,7 @@ from imutils import face_utils
 from PIL import Image
 import threading
 import numpy as np
+import os
 
 class camera():
 	"""
@@ -18,8 +19,9 @@ class camera():
 
 	def __init__(self):
 		"do all the configuration stuff at initialization"
-		face_landmark_path = 'C:/Projects/freefield_tools/headpose_estimation/shape_predictor_68_face_landmarks.dat'
-		im = Image.open('C:/Projects/freefield_tools/headpose_estimation/calib.jpg')
+		cd = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+		face_landmark_path = os.path.join(cd, 'shape_predictor_68_face_landmarks.dat')
+		im = Image.open(os.path.join(cd,'calib.jpg'))
 		K = [6.5308391993466671e+002, 0.0, 3.1950000000000000e+002,
 			 0.0, 6.5308391993466671e+002, 2.3950000000000000e+002,
 			 0.0, 0.0, 1.0]

@@ -44,7 +44,7 @@ def set_setup(setup='arc'):
 	_speakertable = _read_table(table_file)
 	_calibration_filter =  "load filter here"#slab.Filter.load(_calibration_file)
 
-def initialize_devices(rcx_file_name_RX8_1=None, rcx_file_name_RX8_2=None, rcx_file_name_RP2=None, ZBus=False):
+def initialize_devices(rcx_RX8_1=None, rcx_RX8_2=None, rcx_RP2=None, ZBus=False):
 	'''
 	Initialize the ZBus, RX8s, and RP2.
 	'''
@@ -52,12 +52,12 @@ def initialize_devices(rcx_file_name_RX8_1=None, rcx_file_name_RX8_2=None, rcx_f
 	if not _setup:
 		raise ValueError("Please set device to 'arc' or 'dome' before initialization!")
 
-	if rcx_file_name_RX8_1 is not None:
-		_procs["RX8_1"] = _initialize_processor("RX8", rcx_file_name_RX8_1, 1)
-	if rcx_file_name_RX8_2 is not None:
-		_procs["RX8_2"] = _initialize_processor("RX8", rcx_file_name_RX8_2, 2)
-	if rcx_file_name_RX8_2 is not None:
-		_procs["RP2"] = _initialize_processor("RP2", rcx_file_name_RP2, 1)
+	if rcx_RX8_1 is not None:
+		_procs["RX8_1"] = _initialize_processor("RX8", rcx_RX8_1, 1)
+	if rcx_RX8_2 is not None:
+		_procs["RX8_2"] = _initialize_processor("RX8", rcx_RX8_2, 2)
+	if rcx_RP2 is not None:
+		_procs["RP2"] = _initialize_processor("RP2", rcx_RP2, 1)
 	if ZBus:
 		_procs["ZBus"] = _initialize_zbus()
 
@@ -71,10 +71,10 @@ def set(variable, value, proc='RX8s'):
 	Example:
 	set('stimdur', 90, proc='RX8s')
 	'''
-	if proc.lower()=="RX8s":
-		procs==["RX8_1", "RX8_2"]
-	elif proc=="all"
-		procs==["RX8_1", "RX8_2", "RP2"]
+	if proc.lower()=="rx8s":
+		procs=["RX8_1", "RX8_2"]
+	elif proc=="all":
+		procs=["RX8_1", "RX8_2", "RP2"]
 	elif proc=="RX8_1" or proc=="RX8_2" or proc=="RP2":
 		procs=[proc]
 	else:
@@ -82,12 +82,16 @@ def set(variable, value, proc='RX8s'):
 	for p in procs:
 		if type(value) == list or type(value) == np.ndarray:
 			if not _procs[p]._oleobj_.InvokeTypes(15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)), variable, 0, value):
-				raise ValueError("writing to tag %s on %s failed!""%(variable, p))
+				raise ValueError("writing to tag %s on %s failed!"%(variable, p))
+			else:
+				print("writing data to tag %s on %s..."%(variable, p))
 		else:
 			if not _procs[p].SetTagVal(variable, value):
-				raise ValueError("writing to tag %s on %s failed!""%(variable, p))
+				raise ValueError("writing to tag %s on %s failed!"%(variable, p))
+			else:
+				print("setting value of tag %s on %s to %s..."%(variable, p, value))
 
-def get(variable,n_samples=1, proc='RX81'):
+def get(variable, proc, n_samples=1):
 	'''
 	Get the value of a variable from a processor. Returns None if variable
 	does not exist in the rco file. [Can we get single items and arrays automatically?]
@@ -106,13 +110,12 @@ def halt(proc="all"):
 	Halt specified processor. If "all" (default), halt all processors
 	'''
 	if proc=="all":
-		for p in _procs.values():
+		for p,n in zip(_procs.values(), _procs.keys()):
 			if p.Halt():
-				print("Halting "+p)
+				print("Halting "+n)
 	else:
-		_procs[proc].Halt()
-			if p.Halt():
-				print("Halting "+p)
+		if _procs[proc].Halt():
+			print("Halting "+proc)
 	pass
 
 def trigger(trig='zBusA', proc=None):
@@ -124,7 +127,7 @@ def trigger(trig='zBusA', proc=None):
 	if 'soft' in trig.lower():
 		if not proc:
 			raise ValueError('Proc needs to be specified for SoftTrig!')
-		if _procs[proc].SoftTrg()
+		if _procs[proc].SoftTrg():
 			print("sending software trigger to "+proc)
 	if "zbus" in trig.lower() and not _procs["ZBus"]:
 		raise ValueError('ZBus needs to be initialized first!')
@@ -158,13 +161,13 @@ def get_speaker_from_direction(azimuth=0, elevation=0):
 	table = filter_table(azimuth=[str(azimuth)], elevation=[str(elevation)])
 	proc = table["proc"]
 	channel = table["index"]
-	return channel[0], proc[0]
+	return int(channel[0]), proc[0]
 
 def get_speaker_from_number(number):
 	table = filter_table(ongoing=[str(number)])
 	proc = table["proc"]
 	channel = table["index"]
-	return channel[0], proc[0]
+	return int(channel[0]), proc[0]
 
 # other functions to access the freefield table here
 def _read_table(fname):

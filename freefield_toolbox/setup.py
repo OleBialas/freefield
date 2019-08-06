@@ -25,7 +25,7 @@ _calibration_filter = None
 _speakertable = None
 _location_ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
-def set_setup(setup='arc'):
+def initialize(setup='arc'):
 	'''
 	Set the freefield setup to use (arc or dome).
 	'''
@@ -162,6 +162,25 @@ def get_speaker_from_direction(azimuth=0, elevation=0):
 	proc = table["proc"]
 	channel = table["index"]
 	return int(channel[0]), proc[0]
+
+def get_speaker_position(number, proc=None):
+	"""
+	return azimuth or azimuth and elevation (for dome and arc respectively) for
+	a given speaker. The speaker can be defined by the ongoing number, or
+	by index numer & processor.
+	"""
+	if _setup == "arc": #only return azimuth
+		if proc is not None:
+			table=filter_table(index=[str(number)], proc=[proc])
+		else:
+			table=filter_table(ongoing=[str(number)])
+		return float(table["azimuth"][0])
+	elif _setup == "dome": #return azimuth and elevation
+		if proc is not None:
+			table=filter_table(index=[str(number)], proc=[proc])
+		else:
+			table=filter_table(ongoing=[str(number)])
+		return float(table["azimuth"][0]), float(table["elevation"][0])
 
 def get_speaker_from_number(number):
 	table = filter_table(ongoing=[str(number)])

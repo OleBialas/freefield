@@ -19,6 +19,7 @@ import time
 # internal variables here:
 #TODO: Einheitliche Namen!
 #TODO: Feedback from functions
+#TODO: function to "unset" channels
 _procs = dict(RX8_1=None, RX8_2=None, RP2=None, ZBus=None) # dict might be better because you can call objects with a string
 _setup = None
 _calibration_filter = None

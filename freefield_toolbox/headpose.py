@@ -21,7 +21,7 @@ class camera():
 		"do all the configuration stuff at initialization"
 		cd = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 		face_landmark_path = os.path.join(cd, 'shape_predictor_68_face_landmarks.dat')
-		im = Image.open(os.path.join(cd,'calib.jpg'))
+		#im = Image.open(os.path.join(cd,'calib.jpg'))
 		K = [6.5308391993466671e+002, 0.0, 3.1950000000000000e+002,
 			 0.0, 6.5308391993466671e+002, 2.3950000000000000e+002,
 			 0.0, 0.0, 1.0]

@@ -26,7 +26,7 @@ _calibration_filter = None
 _speakertable = None
 _location_ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
-def initialize(setup='arc'):
+def initialize_setup(setup='arc'):
 	'''
 	Set the freefield setup to use (arc or dome).
 	'''
@@ -128,11 +128,11 @@ def trigger(trig='zBusA', proc=None):
 	if 'soft' in trig.lower():
 		if not proc:
 			raise ValueError('Proc needs to be specified for SoftTrig!')
-		if _procs[proc].SoftTrg():
+		if _procs[proc].SoftTrg(1):
 			print("sending software trigger to "+proc)
-	if "zbus" in trig.lower() and not _procs["ZBus"]:
+	elif "zbus" in trig.lower() and not _procs["ZBus"]:
 		raise ValueError('ZBus needs to be initialized first!')
-	if trig.lower()=="zbusa":
+	elif trig.lower()=="zbusa":
 		if _procs["ZBus"].zBusTrigA(0, 0, 20):
 			print("sending trigger via ZBus-A")
 	elif trig.lower()=="zbusb":

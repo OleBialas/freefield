@@ -177,11 +177,3 @@ def project_points_on_image(im, shape, euler_angle, rotation_vec, translation_ve
             0.75, (0, 0, 0), thickness=2)
         cv2.imshow("Head Pose", im)
     cv2.waitKey(0)
-
-
-if __name__ == "__main__":
-    import camera
-    camera.init()
-    filename="C:/Projects/Spinnaker_Python/tmp.jpg"
-    camera.acquire_images(filename)
-    camera.deinit()

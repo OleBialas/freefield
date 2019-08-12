@@ -96,6 +96,7 @@ def set_speaker_config(setup='arc'):
 	else: printv('Setup not calibrated.')
 
 def set_variable(variable, value, proc='RX8s'):
+
 	'''
 	Set a variable on a processor to a value. Setting will silently fail if
 	variable does not exist in the rcx file. The function will use SetTagVal
@@ -155,7 +156,7 @@ def trigger(trig='zBusA', proc=None):
 		printv('zBusA trigger sent.')
 	elif trig.lower() == "zbusb":
 		_procs.ZBus.zBusTrigB(0, 0, 20)
-		printv('zBusB trigger sent.')
+
 	else:
 		raise ValueError("Unknown trigger type! Must be 'soft', 'zBusA' or 'zBusB'!")
 
@@ -175,13 +176,16 @@ def wait_to_finish_playing(proc='RX8s', tagname="playback"):
 		time.sleep(0.01)
 	printv('Done waiting.')
 
-def speaker_from_direction(azimuth=0, elevation=0):
+
+def get_speaker_from_direction(azimuth=0, elevation=0):
 	'''
 	Returns the speaker, channel, and RX8 index that the speaker
 	at a given azimuth and elevation is attached to.
 	'''
+
 	row = int(numpy.argwhere(numpy.logical_and(_speaker_table[:,3]==azimuth, _speaker_table[:,4]==elevation)))
 	return _speaker_table[row,0:3] # returns speaker, channel, and RX8 index
+
 
 def speaker_from_number(speaker):
 	'''
@@ -248,3 +252,4 @@ def calibrate():
 
 def printv(*args, **kwargs):
 	if _verbose: print(*args, **kwargs)
+

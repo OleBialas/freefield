@@ -4,14 +4,11 @@ import cv2
 import numpy as np
 import dlib
 from imutils import face_utils
-import glob
-from datetime import date
-_location_ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
-
-# configuration for head extracting the head pose of an image
-face_landmark_path = os.path.join(_location_, "shape_predictor_68_face_landmarks.dat")
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor(face_landmark_path)
+from pathlib import Path
+_location = Path(__file__).resolve().parents[0]
+_face_landmark_path = _location/Path("shape_predictor_68_face_landmarks.dat")
+_detector = dlib.get_frontal_face_detector()
+_predictor = dlib.shape_predictor(face_landmark_path)
 
 #initializing the camera:
 system = PySpin.System.GetInstance()     # Retrieve singleton reference to system object
@@ -19,6 +16,7 @@ version = system.GetLibraryVersion() # Get current library version
 print('PySpin Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
 cam_list = system.GetCameras()    # Retrieve list of cameras from the system
 num_cameras = cam_list.GetSize()
+
 if num_cameras != 1:    # Finish if there are no cameras
     cam_list.Clear()# Clear camera list before releasing system
     system.ReleaseInstance() # Release system instance
@@ -65,11 +63,11 @@ def acquire_images(filename, n=1):
             print('Image incomplete with image status %d ...' % image_result.GetImageStatus())
         image_converted = image_result.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
         image_result.Release()
-        image_converted.Save(filename)
+        image_converted.Save(Path(filename))
         print('Image saved at %s' % filename)
         cam.EndAcquisition()
 
-def deinit():
+def halt():
     global cam
     cam.DeInit()        # Deinitialize camera
     print("Deinitializing camera...")
@@ -104,7 +102,7 @@ def print_device_info(nodemap):
 
     return result
 
-def camera_calibration(img_folder, board_shape=(9,6), calib_path=""):
+def compute_coefficients(images, board_shape=(9,6)):
 
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
     # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
@@ -114,7 +112,6 @@ def camera_calibration(img_folder, board_shape=(9,6), calib_path=""):
     # Arrays to store object points and image points from all the images.
     objpoints = [] # 3d point in real world space
     imgpoints = [] # 2d points in image plane.
-    images = glob.glob(img_path+'*.jpg')
     for fname in images:
         img = cv2.imread(fname)
         gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
@@ -130,13 +127,10 @@ def camera_calibration(img_folder, board_shape=(9,6), calib_path=""):
             img = cv2.drawChessboardCorners(img, (9,6), corners2,ret)
             cv2.imshow('img',img)
             cv2.waitKey(500)
+
     cv2.destroyAllWindows()
     ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None)
-    calib = dict(camera_matrix=mtx, distortion_coefficients=dist, date=str(date.today()))
-    if calib_path: # save calibration
-        with open(calib_path, 'w') as outfile:
-            json.dump(calib, outfile)
-    return calib
+    return mtx, dist
 
 def get_pose_from_image(image_path, plot=False):
     im = cv2.imread(image_path)

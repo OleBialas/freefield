@@ -4,7 +4,7 @@ Functions and classes for working with the freefield dome and arc.
 # TODO: speaker numbers and RX8 indices should be zero-based for consistency!
 
 import time
-import pathlib
+from pathlib import Path
 import collections
 import numpy
 import slab
@@ -18,7 +18,7 @@ _calibration_filter = None
 _speaker_table = None
 proc_tuple = collections.namedtuple('TDTrack', 'ZBus RX81 RX82 RP2')
 _procs = proc_tuple(ZBus=None, RX81=None, RX82=None, RP2=None) # use _procs.RX81 or _procs[1] to access or _procs._fields.index('RX81') to get the index from the processor name, or getattr(_procs, 'RX81') to get the processor object directly
-_location = pathlib.Path(__file__).resolve()
+_location = Path(__file__).resolve().parents[0]
 
 def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None, RP2_file=None, RX8_file=None, connection='GB'):
 	'Initialize the ZBus, RX8s, and RP2 with the respective rcx files.'
@@ -80,12 +80,12 @@ def set_speaker_config(setup='arc'):
 	global _speaker_config, _calibration_filter, _speaker_table
 	if setup == 'arc':
 		_speaker_config = 'arc'
-		_calibration_file = _location / pathlib.Path('calibration_filter_arc.npy')
-		table_file = _location / pathlib.Path('speakertable_arc.csv')
+		_calibration_file = _location / Path('calibration_filter_arc.npy')
+		table_file = _location / Path('speakertable_arc.csv')
 	elif setup == 'dome':
 		_speaker_config = 'dome'
-		_calibration_file = _location / pathlib.Path('calibration_filter_dome.npy')
-		table_file = _location / pathlib.Path('speakertable_dome.csv')
+		_calibration_file = _location / Path('calibration_filter_dome.npy')
+		table_file = _location / Path('speakertable_dome.csv')
 	else: raise ValueError("Unknown device! Use 'arc' or 'dome'.")
 	printv(f'Speaker configuration set to {setup}.')
 	_speaker_table = numpy.loadtxt(fname=table_file, delimiter=',', skiprows=1, converters={3:lambda s:float(s or 0),4:lambda s:float(s or 0)}) # lambdas provide default values of 0 if azi or ele are not in the file
@@ -245,11 +245,10 @@ def calibrate():
 	# rename old filter file, if it exists, by appending current date
 	if _calibration_file.exists():
 		date = datetime.datetime.now().strftime("time: %Y-%m-%d-%H-%M-%S")
-		rename_previous = _calibration_file.parent / pathlib.Path(_calibration_file.stem + date + _calibration_file.suffix)
+		rename_previous = _calibration_file.parent / Path(_calibration_file.stem + date + _calibration_file.suffix)
 		_calibration_file.rename(rename_previous)
 	filt.save(_calibration_file) # save filter file to 'calibration_arc.npy' or dome.
 	printv('Calibration completed.')
 
 def printv(*args, **kwargs):
 	if _verbose: print(*args, **kwargs)
-

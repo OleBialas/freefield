@@ -1,14 +1,11 @@
 import os
-import numpy as np #for some reason numpy must be imported before PySpin
 import PySpin
 import cv2
+import numpy as np
 import dlib
 from imutils import face_utils
-system = PySpin.System.GetInstance()     # Retrieve singleton reference to system object
-version = system.GetLibraryVersion() # Get current library version
-print('PySpin Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
-cam_list = system.GetCameras()    # Retrieve list of cameras from the system
-num_cameras = cam_list.GetSize()
+import glob
+from datetime import date
 _location_ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 # configuration for head extracting the head pose of an image
@@ -16,10 +13,16 @@ face_landmark_path = os.path.join(_location_, "shape_predictor_68_face_landmarks
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor(face_landmark_path)
 
+#initializing the camera:
+system = PySpin.System.GetInstance()     # Retrieve singleton reference to system object
+version = system.GetLibraryVersion() # Get current library version
+print('PySpin Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
+cam_list = system.GetCameras()    # Retrieve list of cameras from the system
+num_cameras = cam_list.GetSize()
 if num_cameras != 1:    # Finish if there are no cameras
     cam_list.Clear()# Clear camera list before releasing system
     system.ReleaseInstance() # Release system instance
-    print('Error! There must be exactly one camera attached to the system!')
+    print('<Error! There must be exactly one camera attached to the system!')
 else:
     cam = cam_list[0]
     nodemap_tldevice = cam.GetTLDeviceNodeMap()
@@ -101,6 +104,39 @@ def print_device_info(nodemap):
 
     return result
 
+def camera_calibration(img_folder, board_shape=(9,6), calib_path=""):
+
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+    # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
+    # These are the "coordinates" of the corners of the chess field.
+    objp = np.zeros((board_shape[0]*board_shape[1],3), np.float32)
+    objp[:,:2] = np.mgrid[0:board_shape[0],0:board_shape[1]].T.reshape(-1,2)
+    # Arrays to store object points and image points from all the images.
+    objpoints = [] # 3d point in real world space
+    imgpoints = [] # 2d points in image plane.
+    images = glob.glob(img_path+'*.jpg')
+    for fname in images:
+        img = cv2.imread(fname)
+        gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+        # Find the chess board corners
+        ret, corners = cv2.findChessboardCorners(gray, (9,6),None)
+        # If found, add object points, image points (after refining them)
+        if ret == True:
+            objpoints.append(objp)
+            #get the position of the corners in the
+            corners2 = cv2.cornerSubPix(gray,corners,(11,11),(-1,-1),criteria)
+            imgpoints.append(corners2)
+            # Draw and display the corners
+            img = cv2.drawChessboardCorners(img, (9,6), corners2,ret)
+            cv2.imshow('img',img)
+            cv2.waitKey(500)
+    cv2.destroyAllWindows()
+    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None)
+    calib = dict(camera_matrix=mtx, distortion_coefficients=dist, date=str(date.today()))
+    if calib_path: # save calibration
+        with open(calib_path, 'w') as outfile:
+            json.dump(calib, outfile)
+    return calib
 
 def get_pose_from_image(image_path, plot=False):
     im = cv2.imread(image_path)
@@ -115,6 +151,8 @@ def get_pose_from_image(image_path, plot=False):
                              [0, focal_length, center[1]],
                              [0, 0, 1]], dtype = "double"
                              )
+    print(cam_matrix)
+
     dist_coeffs = np.zeros((4,1)) # assuming no lens distortion
 
     # Array of object points in the world coordinate space.

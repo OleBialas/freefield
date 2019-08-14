@@ -6,9 +6,8 @@ import dlib
 from imutils import face_utils
 from pathlib import Path
 _location = Path(__file__).resolve().parents[0]
-_face_landmark_path = _location/Path("shape_predictor_68_face_landmarks.dat")
 _detector = dlib.get_frontal_face_detector()
-_predictor = dlib.shape_predictor(face_landmark_path)
+_predictor = dlib.shape_predictor(str(_location/Path("shape_predictor_68_face_landmarks.dat")))
 _mtx=None #camera matrix
 _dist=None #distortion coefficients
 
@@ -234,7 +233,7 @@ def project_points_on_image(im, shape, euler_angle, rotation_vec, translation_ve
         cv2.putText(im, "Z: " + "{:7.2f}".format(euler_angle[2, 0]), (20, 80), cv2.FONT_HERSHEY_SIMPLEX,
             0.75, (0, 0, 0), thickness=2)
         cv2.imshow("Head Pose", im)
-    cv2.waitKey(0
+    cv2.waitKey(0)
 
 def undistort_image(im):
     h,  w = im.shape[:2]

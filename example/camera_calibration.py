@@ -34,3 +34,6 @@ def calibrate_camera(out_folder, n_images=20, image_names="calib_im", remove_ima
 
     setup.halt()
     camera.halt()
+
+if __name__ =="__main__":
+    calibrate_camera()

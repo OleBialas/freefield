@@ -9,6 +9,8 @@ _location = Path(__file__).resolve().parents[0]
 _face_landmark_path = _location/Path("shape_predictor_68_face_landmarks.dat")
 _detector = dlib.get_frontal_face_detector()
 _predictor = dlib.shape_predictor(face_landmark_path)
+_mtx=None #camera matrix
+_dist=None #distortion coefficients
 
 #initializing the camera:
 system = PySpin.System.GetInstance()     # Retrieve singleton reference to system object
@@ -36,6 +38,19 @@ else:
 
     cam.Init() # Initialize camera
     nodemap = cam.GetNodeMap() # Retrieve GenICam nodemap
+
+def load_calibration(folder):
+    global _mtx, _dist
+
+    try:
+        _mtx = np.load(Path(folder)/Path("camera_matrix.npy"))
+    except FileNotFoundError:
+        print("could not find camera matrix")
+    try:
+        _dist = np.load(Path(folder)/Path("distortion_coefficients.npy"))
+    except FileNotFoundError:
+        print("could not find distortion_coefficients")
+
 
 def acquire_images(filename, n=1):
     # In order to access the node entries, they have to be casted to a pointer type (CEnumerationPtr here)
@@ -132,22 +147,33 @@ def compute_coefficients(images, board_shape=(9,6)):
     ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None)
     return mtx, dist
 
-def get_pose_from_image(image_path, plot=False):
+def get_pose_from_image(image_path, plot=False, undistort=True):
+    global _mtx, _dist
     im = cv2.imread(image_path)
+    if undistort:
+        if not n.sum(_dist):
+            print("ERROR! can not undistort an image without calibration!")
+        else:
+            im = undistort(im)
     size = im.shape
     # Camera matrix describing the transformtaion from camera to image coordinates
     # the focal lenth is approximated as as the image width and the optical center
     # as the center of the image
-    focal_length = size[1]
-    center = (size[1]/2, size[0]/2)
-    cam_matrix = np.array(
+    if not _mtx:
+        print("WARNING! No camera matrix loaded!\n"
+        "The matrix will be approximated but this is less precise...")
+        focal_length = size[1]
+        center = (size[1]/2, size[0]/2)
+        _mtx = np.array(
                              [[focal_length, 0, center[0]],
                              [0, focal_length, center[1]],
                              [0, 0, 1]], dtype = "double"
                              )
-    print(cam_matrix)
 
-    dist_coeffs = np.zeros((4,1)) # assuming no lens distortion
+    if not _dist:
+        print("WARNING! No distortion coefficients loaded!\n"
+        "distortion effects will be ignored...")
+        _dist = np.zeros((4,1)) # assuming no lens distortion
 
     # Array of object points in the world coordinate space.
     # The elements represent points in a generic 3D model
@@ -176,16 +202,16 @@ def get_pose_from_image(image_path, plot=False):
     image_pts = np.float32([shape[17], shape[21], shape[22],shape[26], shape[36],shape[39],
     shape[42], shape[45], shape[31], shape[35], shape[48], shape[54], shape[57], shape[8]])
     #estimate the translation and rotation coefficients:
-    success, rotation_vec, translation_vec = cv2.solvePnP(object_pts, image_pts, cam_matrix, dist_coeffs)
+    success, rotation_vec, translation_vec = cv2.solvePnP(object_pts, image_pts, _mtx, _dist)
     # get the angles out of the transformation matrix:
     rotation_mat, _ = cv2.Rodrigues(rotation_vec)
     pose_mat = cv2.hconcat((rotation_mat, translation_vec))
     _, _, _, _, _, _, euler_angle = cv2.decomposeProjectionMatrix(pose_mat)
     if plot:
-        project_points_on_image(im, shape, euler_angle, rotation_vec, translation_vec, cam_matrix, dist_coeffs)
+        project_points_on_image(im, shape, euler_angle, rotation_vec, translation_vec)
     return euler_angle[0, 0], euler_angle[1, 0], euler_angle[2, 0] # x, y, z
 
-def project_points_on_image(im, shape, euler_angle, rotation_vec, translation_vec, cam_matrix, dist_coeffs):
+def project_points_on_image(im, shape, euler_angle, rotation_vec, translation_vec):
 
     reprojectsrc = np.float32([[10.0, 10.0, 10.0],
                             [10.0, 10.0, -10.0],
@@ -196,7 +222,7 @@ def project_points_on_image(im, shape, euler_angle, rotation_vec, translation_ve
                             [-10.0, -10.0, -10.0],
                             [-10.0, -10.0, 10.0]])
 
-    reprojectdst, _ = cv2.projectPoints(reprojectsrc, rotation_vec, translation_vec, cam_matrix, dist_coeffs)
+    reprojectdst, _ = cv2.projectPoints(reprojectsrc, rotation_vec, translation_vec, _mtx, _dist)
     reprojectdst = tuple(map(tuple, reprojectdst.reshape(8, 2)))
 
     for (x, y) in shape:
@@ -208,4 +234,12 @@ def project_points_on_image(im, shape, euler_angle, rotation_vec, translation_ve
         cv2.putText(im, "Z: " + "{:7.2f}".format(euler_angle[2, 0]), (20, 80), cv2.FONT_HERSHEY_SIMPLEX,
             0.75, (0, 0, 0), thickness=2)
         cv2.imshow("Head Pose", im)
-    cv2.waitKey(0)
+    cv2.waitKey(0
+
+def undistort_image(im):
+    h,  w = im.shape[:2]
+    new_mtx, roi=cv2.getOptimalNewCameraMatrix(_mtx,_dist,(w,h),1,(w,h))
+    im = cv2.undistort(img, _mtx, _dist, None, newcameramtx)
+    x,y,w,h = roi
+    im = im[y:y+h, x:x+w]  # crop the image
+    return im

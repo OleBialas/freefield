@@ -16,8 +16,7 @@ _speaker_config = None
 _calibration_file = None
 _calibration_filter = None
 _speaker_table = None
-proc_tuple = collections.namedtuple('TDTrack', 'ZBus RX81 RX82 RP2')
-_procs = proc_tuple(ZBus=None, RX81=None, RX82=None, RP2=None) # use _procs.RX81 or _procs[1] to access or _procs._fields.index('RX81') to get the index from the processor name, or getattr(_procs, 'RX81') to get the processor object directly
+_procs=None
 _location = Path(__file__).resolve().parents[0]
 
 def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None, RP2_file=None, RX8_file=None, connection='GB'):
@@ -26,11 +25,14 @@ def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None, RP2_file=None,
 	if not _speaker_config:
 		raise ValueError("Please set device to 'arc' or 'dome' before initialization!")
 	printv('Initializing TDT rack.')
+	RX81, RX82, RP2, ZB = None, None, None, None
 	if RX8_file: RX81_file, RX82_file = RX8_file, RX8_file  # use this file for both processors
-	if RX81_file: _procs.RX81 = _initialize_processor(device_type='RX8', rcx_file=RX81_file, index=1, connection=connection)
-	if RX82_file: _procs.RX81 = _initialize_processor(device_type='RX8', rcx_file=RX81_file, index=1, connection=connection)
-	if RP2_file: _procs.RP2 = _initialize_processor(device_type='RP2', rcx_file=RP2_file, index=1, connection=connection)
-	if ZBus: _procs.ZBus = _initialize_processor(device_type='ZBus')
+	if RX81_file: RX81 = _initialize_processor(device_type='RX8', rcx_file=RX81_file, index=1, connection=connection)
+	if RX82_file: RX82 = _initialize_processor(device_type='RX8', rcx_file=RX81_file, index=1, connection=connection)
+	if RP2_file: RP2 = _initialize_processor(device_type='RP2', rcx_file=RP2_file, index=1, connection=connection)
+	if ZBus: ZB = _initialize_processor(device_type='ZBus')
+	proc_tuple = collections.namedtuple('TDTrack', 'ZBus RX81 RX82 RP2')
+	_procs = proc_tuple(ZBus=ZB, RX81=RX81, RX82=RX82, RP2=RP2)
 
 def _initialize_processor(device_type=None, rcx_file=None, index=1, connection='GB'):
 	if device_type.lower() == 'zbus':
@@ -81,14 +83,14 @@ def set_speaker_config(setup='arc'):
 	if setup == 'arc':
 		_speaker_config = 'arc'
 		_calibration_file = _location / Path('calibration_filter_arc.npy')
-		table_file = _location / Path('speakertable_arc.csv')
+		table_file = _location / Path('speakertable_arc.txt')
 	elif setup == 'dome':
 		_speaker_config = 'dome'
 		_calibration_file = _location / Path('calibration_filter_dome.npy')
-		table_file = _location / Path('speakertable_dome.csv')
+		table_file = _location / Path('speakertable_dome.txt')
 	else: raise ValueError("Unknown device! Use 'arc' or 'dome'.")
 	printv(f'Speaker configuration set to {setup}.')
-	_speaker_table = numpy.loadtxt(fname=table_file, delimiter=',', skiprows=1, converters={3:lambda s:float(s or 0),4:lambda s:float(s or 0)}) # lambdas provide default values of 0 if azi or ele are not in the file
+	_speaker_table = numpy.loadtxt(fname=table_file, delimiter='\t', skiprows=1, converters={3:lambda s:float(s or 0),4:lambda s:float(s or 0)}) # lambdas provide default values of 0 if azi or ele are not in the file
 	printv('Speaker table loaded.')
 	if _calibration_file.exists():
 		_calibration_filter = slab.Filter.load(_calibration_file)

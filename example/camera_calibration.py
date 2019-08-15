@@ -11,7 +11,8 @@ import time
 import os
 import numpy as np
 _rcx_file = Path(__file__).resolve().parents[0]/Path("button_response.rcx")
-setup.initialize_devices(RP2_file=_rcx_file)
+setup.set_speaker_config("arc")
+setup.initialize_devices(RP2_file=str(_rcx_file), ZBus=False)
 
 def calibrate_camera(out_folder, n_images=20, image_names="calib_im", remove_images=True):
     print("image acquisition started, press the button to take a picture")

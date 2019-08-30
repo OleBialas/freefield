@@ -9,6 +9,7 @@ import collections
 import numpy
 import slab
 import win32com.client
+from freefield_toolbox import camera
 
 # internal variables here:
 _verbose = False
@@ -19,7 +20,7 @@ _speaker_table = None
 _procs=None
 _location = Path(__file__).resolve().parents[0]
 
-def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None, RP2_file=None, RX8_file=None, connection='GB'):
+def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None, RP2_file=None, RX8_file=None, cam=False, connection='GB'):
 	'Initialize the ZBus, RX8s, and RP2 with the respective rcx files.'
 	global _procs
 	if not _speaker_config:
@@ -27,12 +28,15 @@ def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None, RP2_file=None,
 	printv('Initializing TDT rack.')
 	RX81, RX82, RP2, ZB = None, None, None, None
 	if RX8_file: RX81_file, RX82_file = RX8_file, RX8_file  # use this file for both processors
-	if RX81_file: RX81 = _initialize_processor(device_type='RX8', rcx_file=RX81_file, index=1, connection=connection)
-	if RX82_file: RX82 = _initialize_processor(device_type='RX8', rcx_file=RX81_file, index=1, connection=connection)
-	if RP2_file: RP2 = _initialize_processor(device_type='RP2', rcx_file=RP2_file, index=1, connection=connection)
+	if RX81_file: RX81 = _initialize_processor(device_type='RX8', rcx_file=str(RX81_file), index=1, connection=connection)
+	if RX82_file: RX82 = _initialize_processor(device_type='RX8', rcx_file=str(RX82_file), index=2, connection=connection)
+	if RP2_file: RP2 = _initialize_processor(device_type='RP2', rcx_file=str(RP2_file), index=1, connection=connection)
 	if ZBus: ZB = _initialize_processor(device_type='ZBus')
+	if cam:
+		camera.init()
 	proc_tuple = collections.namedtuple('TDTrack', 'ZBus RX81 RX82 RP2')
 	_procs = proc_tuple(ZBus=ZB, RX81=RX81, RX82=RX82, RP2=RP2)
+
 
 def _initialize_processor(device_type=None, rcx_file=None, index=1, connection='GB'):
 	if device_type.lower() == 'zbus':
@@ -113,8 +117,8 @@ def set_variable(variable, value, proc='RX8s'):
 		if proc == 'RX8s':
 			proc = [_procs._fields.index('RX81'),_procs._fields.index('RX82')]
 		else:
-			proc = _procs._fields.index(proc)
-	proc = list(proc)
+			proc = [_procs._fields.index(proc)]
+
 	for p in proc:
 		if isinstance(value, (list, numpy.ndarray)):
 			_procs[p]._oleobj_.InvokeTypes(15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)), variable, 0, value)
@@ -151,13 +155,14 @@ def trigger(trig='zBusA', proc=None):
 			proc = _procs._fields.index(proc) # name to index
 		_procs[proc].SoftTrg(trig)
 		printv(f'SoftTrig {trig} sent to {_procs._fields[proc]}.')
-	if 'zbus' in trig.lower() and not _procs.ZBus:
-		raise ValueError('ZBus needs to be initialized first!')
-	if trig.lower() == "zbusa":
-		_procs.ZBus.zBusTrigA(0, 0, 20)
-		printv('zBusA trigger sent.')
-	elif trig.lower() == "zbusb":
-		_procs.ZBus.zBusTrigB(0, 0, 20)
+	elif 'zbus' in trig.lower():
+		if not _procs.ZBus:
+			raise ValueError('ZBus needs to be initialized first!')
+		if trig.lower() == "zbusa":
+			_procs.ZBus.zBusTrigA(0, 0, 20)
+			printv('zBusA trigger sent.')
+		elif trig.lower() == "zbusb":
+			_procs.ZBus.zBusTrigB(0, 0, 20)
 
 	else:
 		raise ValueError("Unknown trigger type! Must be 'soft', 'zBusA' or 'zBusB'!")
@@ -195,7 +200,12 @@ def speaker_from_number(speaker):
 	that the speaker with a given number (1-48) is attached to.
 	'''
 	row = int(numpy.argwhere(_speaker_table[:,0]==speaker))
-	return _speaker_table[row,1:5] # returns channel, RX8 index, azimuth, and elevation
+	channel = int(_speaker_table[row,1])
+	rx8 = int(_speaker_table[row,2])
+	azimuth = int(_speaker_table[row,3])
+	elevation = int(_speaker_table[row,4])
+
+	return channel, rx8, azimuth, elevation
 
 def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=True):
 	'''
@@ -218,8 +228,18 @@ def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=True):
 	for other in other_procs:
 		set_variable(variable='chan', value=-1, proc=other)
 
+def get_headpose(n_images=10):
+
+	if camera._cam is None:
+		print("ERROR! Camera has to be initialized!")
+	x,y,z = camera.get_headpose(n_images)
+	return x,y,z
+
+def printv(*args, **kwargs):
+	if _verbose: print(*args, **kwargs)
+
 # functions implementing complete procedures
-def calibrate():
+def calibrate_speakers():
 	'''
 	Calibrate all speakers in the array by presenting a sound from each one,
 	recording, computing inverse filters, and saving the calibration file.
@@ -252,5 +272,44 @@ def calibrate():
 	filt.save(_calibration_file) # save filter file to 'calibration_arc.npy' or dome.
 	printv('Calibration completed.')
 
-def printv(*args, **kwargs):
-	if _verbose: print(*args, **kwargs)
+def calibrate_headpose(n_repeat=5, bits=numpy.array([1,2,4,8]),
+pos=numpy.array([0, 25.68, 47.08, 64.20]), plot=True):
+	""""
+	Makes LEDs light up at the given postions. Subject has to align their head
+	with the lit LED and push the button so a picture is taken and the head pose is
+	determined. Then we can determine the coefficients of the linear regression for
+	led position vs measured head position
+	"""
+	from sklearn.linear_model import LinearRegression
+	from matplotlib import pyplot as plt
+	rp2_file = _location.parents[0]/Path("example/button_response.rcx")
+	rx8_file = _location.parents[0]/Path("example/to_bits.rcx")
+	if not _speaker_config:
+		set_speaker_config("arc")
+	initialize_devices(RX81_file=rx8_file, RP2_file=rp2_file, ZBus=True, cam=True)
+	trials = numpy.tile(bits, n_repeat)
+	results=numpy.zeros([len(trials), 2])
+	results[:,0] = trials
+	for i, count in zip(trials,range(len(trials))):
+		print("trial nr"+str(count))
+		set_variable(variable="set_zero",value=False, proc="RX81")
+		set_variable(variable="bitval",value=int(i), proc="RX81")
+		tic = time.time()
+		while not get_variable(variable="response", proc="RP2"):
+			time.sleep(0.1) # wait untill button is pressed
+		set_variable(variable="set_zero",value=True, proc="RX81")
+		x,y,z = camera.get_headpose(n=5)
+		if y is not None:
+			results[count, 1]=y
+			results[count, 0]=pos[numpy.where(bits==i)[0][0]]
+
+	linear_regressor = LinearRegression()
+	linear_regressor.fit(results[:,0].reshape(-1,1), results[:,1].reshape(-1,1))
+	pred = linear_regressor.predict(results[:,0].reshape(-1,1))
+
+	if plot:
+		plt.scatter(results[:,0].reshape(-1,1), results[:,1].reshape(-1,1))
+		plt.plot(results[:,0].reshape(-1,1), pred)
+		plt.show()
+
+	return results, linear_regressor

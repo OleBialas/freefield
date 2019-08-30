@@ -1,94 +1,113 @@
+import sys
+sys.path.append("C:/Projects/freefield_toolbox/")
 import os
+import numpy #for some reason numpy must be imported before PySpin
 import PySpin
 import cv2
 import numpy as np
 import dlib
 from imutils import face_utils
 from pathlib import Path
+from freefield_toolbox import setup
+import tempfile
+import shutil
+import glob
+
+#define internal variables
 _location = Path(__file__).resolve().parents[0]
+_dirpath = tempfile.mkdtemp()# create temporary folder to save images
 _detector = dlib.get_frontal_face_detector()
 _predictor = dlib.shape_predictor(str(_location/Path("shape_predictor_68_face_landmarks.dat")))
-_mtx=None #camera matrix
+_mtx=None #_camera matrix
 _dist=None #distortion coefficients
+_cam = None
+_nodemap = None
+_system = None
 
-#initializing the camera:
-system = PySpin.System.GetInstance()     # Retrieve singleton reference to system object
-version = system.GetLibraryVersion() # Get current library version
-print('PySpin Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
-cam_list = system.GetCameras()    # Retrieve list of cameras from the system
-num_cameras = cam_list.GetSize()
 
-if num_cameras != 1:    # Finish if there are no cameras
-    cam_list.Clear()# Clear camera list before releasing system
-    system.ReleaseInstance() # Release system instance
-    print('<Error! There must be exactly one camera attached to the system!')
-else:
-    cam = cam_list[0]
-    nodemap_tldevice = cam.GetTLDeviceNodeMap()
-    node_device_information = PySpin.CCategoryPtr(nodemap_tldevice.GetNode('DeviceInformation'))
-    if PySpin.IsAvailable(node_device_information) and PySpin.IsReadable(node_device_information):
-        features = node_device_information.GetFeatures()
-        for feature in features:
-            node_feature = PySpin.CValuePtr(feature)
-            print('%s: %s' % (node_feature.GetName(),
-            node_feature.ToString() if PySpin.IsReadable(node_feature) else 'Node not readable'))
+def init():
+    global _cam, _nodemap, _system
+
+    _system = PySpin.System.GetInstance()     # Retrieve singleton reference to system object
+    cam_list = _system.GetCameras()    # Retrieve list of _cameras from the system
+    #initializing the _camera:
+    version = _system.GetLibraryVersion() # Get current library version
+    ('PySpin Library version: %d.%d.%d.%d' % (version.major, version.minor, version.type, version.build))
+    num__cameras = cam_list.GetSize()
+
+    if num__cameras != 1:    # Finish if there are no _cameras
+        cam_list.Clear()# Clear __camera list before releasing system
+        _system.ReleaseInstance() # Release system instance
+        raise ValueError('There must be exactly one camera attached to the system!')
+    else:
+        _cam = cam_list[0]
+        nodemap_tldevice = _cam.GetTLDeviceNodeMap()
+        node_device_information = PySpin.CCategoryPtr(nodemap_tldevice.GetNode('DeviceInformation'))
+        if PySpin.IsAvailable(node_device_information) and PySpin.IsReadable(node_device_information):
+            features = node_device_information.GetFeatures()
+            for feature in features:
+                node_feature = PySpin.CValuePtr(feature)
+                setup.printv('%s: %s' % (node_feature.GetName(),
+                node_feature.ToString() if PySpin.IsReadable(node_feature) else 'Node not readable'))
         else:
-            print('Device control information not available.')
-
-    cam.Init() # Initialize camera
-    nodemap = cam.GetNodeMap() # Retrieve GenICam nodemap
+            raise ValueError('Device control information not available.')
+        _cam.Init() # Initialize _camera
+        _nodemap = _cam.GetNodeMap() # Retrieve GenI_cam nodemap
 
 def load_calibration(folder):
     global _mtx, _dist
-
     try:
-        _mtx = np.load(Path(folder)/Path("camera_matrix.npy"))
-    except FileNotFoundError:
-        print("could not find camera matrix")
+        _mtx = np.load(Path(folder)/Path("_camera_matrix.npy"))
+    except:
+        raise FileNotFoundError("could not find _camera matrix")
     try:
         _dist = np.load(Path(folder)/Path("distortion_coefficients.npy"))
-    except FileNotFoundError:
-        print("could not find distortion_coefficients")
+    except :
+        FileNotFoundError("could not find distortion_coefficients")
 
-
-def acquire_images(filename, n=1):
-    # In order to access the node entries, they have to be casted to a pointer type (CEnumerationPtr here)
-    node_acquisition_mode = PySpin.CEnumerationPtr(nodemap.GetNode('AcquisitionMode'))
+def _acquire_images(filename="image", n=1):
+    """
+    Acquire n images and save them in the temporary folder. Images are saved as
+    filename + number of iteration +".jpg"
+    """
+    node_acquisition_mode = PySpin.CEnumerationPtr(_nodemap.GetNode('AcquisitionMode'))
     if not PySpin.IsAvailable(node_acquisition_mode) or not PySpin.IsWritable(node_acquisition_mode):
-        print('Unable to set acquisition mode to continuous (enum retrieval). Aborting...')
+        raise ValueError('Unable to set acquisition mode to continuous (enum retrieval). Aborting...')
         return False
-    # Retrieve entry node from enumeration node
     node_acquisition_mode_continuous = node_acquisition_mode.GetEntryByName('Continuous')
     if not PySpin.IsAvailable(node_acquisition_mode_continuous) or not PySpin.IsReadable(node_acquisition_mode_continuous):
-        print('Unable to set acquisition mode to continuous (entry retrieval). Aborting...')
+        raise ValueError('Unable to set acquisition mode to continuous (entry retrieval). Aborting...')
         return False
-    # Retrieve integer value from entry node
     acquisition_mode_continuous = node_acquisition_mode_continuous.GetValue()
-    # Set integer value from entry node as new value of enumeration node
     node_acquisition_mode.SetIntValue(acquisition_mode_continuous)
-    # What happens when the camera begins acquiring images depends on the
-    # acquisition mode. Single frame captures only a single image, multi
-    # frame catures a set number of images, and continuous captures a
-    # continuous stream of images
-    cam.BeginAcquisition()
+    _cam.BeginAcquisition()
+    image_paths =[]
     for i in range(n):
-        image_result = cam.GetNextImage()
+        path = _dirpath+"\\"+filename+str(i)+".jpg"
+        image_paths.append(path)
+        image_result = _cam.GetNextImage()
         if image_result.IsIncomplete():
-            print('Image incomplete with image status %d ...' % image_result.GetImageStatus())
+            raise ValueError('Image incomplete with image status %d ...' % image_result.GetImageStatus())
         image_converted = image_result.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
         image_result.Release()
-        image_converted.Save(Path(filename))
-        print('Image saved at %s' % filename)
-        cam.EndAcquisition()
+        image_converted.Save(path)
+        setup.printv('Image saved at %s' % path)
+    _cam.EndAcquisition()
 
-def halt():
-    global cam
-    cam.DeInit()        # Deinitialize camera
-    print("Deinitializing camera...")
+    return image_paths
 
+def deinit():
+    global _cam
+    shutil.rmtree(_dirpath) # delete temporary directory
+    _cam.DeInit()
+    del _cam
+    _system.ReleaseInstance()
+    setup.printv("Deinitializing _camera...")
+
+"""
 def print_device_info(nodemap):
-    """
-    This function prints the device information of the camera from the transport
+    "
+    This function prints the device information of the _camera from the transport
     layer; please see NodeMapInfo example for more in-depth comments on printing
     device information from the nodemap.
 
@@ -96,7 +115,7 @@ def print_device_info(nodemap):
     :type nodemap: INodeMap
     :returns: True if successful, False otherwise.
     :rtype: bool
-    """
+    "
     print('*** DEVICE INFORMATION ***\n')
     try:
         result = True
@@ -115,6 +134,7 @@ def print_device_info(nodemap):
         return False
 
     return result
+"""
 
 def compute_coefficients(images, board_shape=(9,6)):
 
@@ -141,26 +161,38 @@ def compute_coefficients(images, board_shape=(9,6)):
             img = cv2.drawChessboardCorners(img, (9,6), corners2,ret)
             cv2.imshow('img',img)
             cv2.waitKey(500)
+        else:
+            setup.printv("could not find a chess board in the image "+fname)
 
     cv2.destroyAllWindows()
-    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1],None,None)
+    ret, mtx, dist, rvecs, tvecs = cv2.calibrate_camera(objpoints, imgpoints, gray.shape[::-1],None,None)
     return mtx, dist
 
-def get_pose_from_image(image_path, plot=False, undistort=True):
+
+def get_headpose(n=10):
+    """
+    Take n images, compute and return the average headpose
+    """
+    image_paths = _acquire_images(n=n)
+    azimuth, elevation, tilt = 0,0,0
+    for im in image_paths:
+        x,y,z = _get_pose_from_image(im)
+        if None in [x,y,z]:
+            n -=1
+        else:
+            azimuth += x
+            elevation +=y
+            tilt += z
+    return azimuth/n, elevation/n, tilt/n
+
+
+def _get_pose_from_image(image_path, plot=False, undistort=False):
     global _mtx, _dist
     im = cv2.imread(image_path)
-    if undistort:
-        if not n.sum(_dist):
-            print("ERROR! can not undistort an image without calibration!")
-        else:
-            im = undistort(im)
-    size = im.shape
-    # Camera matrix describing the transformtaion from camera to image coordinates
-    # the focal lenth is approximated as as the image width and the optical center
-    # as the center of the image
-    if not _mtx:
-        print("WARNING! No camera matrix loaded!\n"
+    if not np.sum(_mtx):
+        setup.printv("No _camera matrix loaded!\n"
         "The matrix will be approximated but this is less precise...")
+        size = im.shape
         focal_length = size[1]
         center = (size[1]/2, size[0]/2)
         _mtx = np.array(
@@ -168,11 +200,15 @@ def get_pose_from_image(image_path, plot=False, undistort=True):
                              [0, focal_length, center[1]],
                              [0, 0, 1]], dtype = "double"
                              )
-
-    if not _dist:
-        print("WARNING! No distortion coefficients loaded!\n"
+    if not np.sum(_dist):
+        setup.printv("No distortion coefficients loaded!\n"
         "distortion effects will be ignored...")
         _dist = np.zeros((4,1)) # assuming no lens distortion
+        if undistort:
+            raise ValueError("ERROR! undistorting images won't work without _camera calibration!")
+
+    if undistort:
+        im = undistort_image(im)
 
     # Array of object points in the world coordinate space.
     # The elements represent points in a generic 3D model
@@ -192,11 +228,11 @@ def get_pose_from_image(image_path, plot=False, undistort=True):
                             [0.000000, -7.415691, 4.070434]])
 
     # Get corresponding 2D points in the image:
-    face_rects = detector(im, 0)
+    face_rects = _detector(im, 0)
     if not face_rects:
-        print("ERROR! Are you sure this is a face?")
         return None, None, None
-    shape = predictor(im, face_rects[0])
+        raise ValueError("Could not recognize a face in the image %s, returning none") %(image_path)
+    shape = _predictor(im, face_rects[0])
     shape = face_utils.shape_to_np(shape)
     image_pts = np.float32([shape[17], shape[21], shape[22],shape[26], shape[36],shape[39],
     shape[42], shape[45], shape[31], shape[35], shape[48], shape[54], shape[57], shape[8]])
@@ -206,9 +242,10 @@ def get_pose_from_image(image_path, plot=False, undistort=True):
     rotation_mat, _ = cv2.Rodrigues(rotation_vec)
     pose_mat = cv2.hconcat((rotation_mat, translation_vec))
     _, _, _, _, _, _, euler_angle = cv2.decomposeProjectionMatrix(pose_mat)
+
     if plot:
         project_points_on_image(im, shape, euler_angle, rotation_vec, translation_vec)
-    return euler_angle[0, 0], euler_angle[1, 0], euler_angle[2, 0] # x, y, z
+    return euler_angle[0, 0],euler_angle[1, 0],euler_angle[2, 0] # x,y,z
 
 def project_points_on_image(im, shape, euler_angle, rotation_vec, translation_vec):
 
@@ -237,8 +274,8 @@ def project_points_on_image(im, shape, euler_angle, rotation_vec, translation_ve
 
 def undistort_image(im):
     h,  w = im.shape[:2]
-    new_mtx, roi=cv2.getOptimalNewCameraMatrix(_mtx,_dist,(w,h),1,(w,h))
-    im = cv2.undistort(img, _mtx, _dist, None, newcameramtx)
+    new_mtx, roi=cv2.getOptimalNew_cameraMatrix(_mtx,_dist,(w,h),1,(w,h))
+    im = cv2.undistort(im, _mtx, _dist, None, new_mtx)
     x,y,w,h = roi
     im = im[y:y+h, x:x+w]  # crop the image
     return im

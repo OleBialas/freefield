@@ -12,6 +12,7 @@ from freefield_toolbox import setup
 import tempfile
 import shutil
 import glob
+import multiprocessing
 
 #define internal variables
 _location = Path(__file__).resolve().parents[0]
@@ -23,10 +24,10 @@ _dist=None #distortion coefficients
 _cam = None
 _nodemap = None
 _system = None
+_pool = None
 
-
-def init():
-    global _cam, _nodemap, _system
+def init(multiprocess=True):
+    global _cam, _nodemap, _system, _pool
 
     _system = PySpin.System.GetInstance()     # Retrieve singleton reference to system object
     cam_list = _system.GetCameras()    # Retrieve list of _cameras from the system
@@ -53,6 +54,11 @@ def init():
             raise ValueError('Device control information not available.')
         _cam.Init() # Initialize _camera
         _nodemap = _cam.GetNodeMap() # Retrieve GenI_cam nodemap
+
+    if multiprocess:
+        n_cores = multiprocessing.cpu_count()
+        _pool = multiprocessing.Pool(processes=n_cores)
+        setup.printv("using multiprocessing with %s cores" %(n_cores))
 
 def load_calibration(folder):
     global _mtx, _dist
@@ -104,38 +110,6 @@ def deinit():
     _system.ReleaseInstance()
     setup.printv("Deinitializing _camera...")
 
-"""
-def print_device_info(nodemap):
-    "
-    This function prints the device information of the _camera from the transport
-    layer; please see NodeMapInfo example for more in-depth comments on printing
-    device information from the nodemap.
-
-    :param nodemap: Transport layer device nodemap.
-    :type nodemap: INodeMap
-    :returns: True if successful, False otherwise.
-    :rtype: bool
-    "
-    print('*** DEVICE INFORMATION ***\n')
-    try:
-        result = True
-        node_device_information = PySpin.CCategoryPtr(nodemap.GetNode('DeviceInformation'))
-        if PySpin.IsAvailable(node_device_information) and PySpin.IsReadable(node_device_information):
-            features = node_device_information.GetFeatures()
-            for feature in features:
-                node_feature = PySpin.CValuePtr(feature)
-                print('%s: %s' % (node_feature.GetName(),
-                                  node_feature.ToString() if PySpin.IsReadable(node_feature) else 'Node not readable'))
-        else:
-            print('Device control information not available.')
-
-    except PySpin.SpinnakerException as ex:
-        print('Error: %s' % ex)
-        return False
-
-    return result
-"""
-
 def compute_coefficients(images, board_shape=(9,6)):
 
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
@@ -169,21 +143,20 @@ def compute_coefficients(images, board_shape=(9,6)):
     return mtx, dist
 
 
-def get_headpose(n=10):
-    """
-    Take n images, compute and return the average headpose
-    """
+def get_headpose(n=4):
+
     image_paths = _acquire_images(n=n)
-    azimuth, elevation, tilt = 0,0,0
-    for im in image_paths:
-        x,y,z = _get_pose_from_image(im)
-        if None in [x,y,z]:
-            n -=1
-        else:
-            azimuth += x
-            elevation +=y
-            tilt += z
-    return azimuth/n, elevation/n, tilt/n
+    if _pool:
+        pose = _pool.map(_get_pose_from_image, image_paths)
+    else:
+        pose=[]
+        for im in image_paths:
+            x,y,z = _get_pose_from_image(im)
+            pose.append((x,y,z))
+
+    pose = np.array(pose, dtype=np.float)
+    pose = np.nanmean(pose, axis=0)
+    return pose #x,y,z
 
 
 def _get_pose_from_image(image_path, plot=False, undistort=False):

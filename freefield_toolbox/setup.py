@@ -272,8 +272,7 @@ def calibrate_speakers():
 	filt.save(_calibration_file) # save filter file to 'calibration_arc.npy' or dome.
 	printv('Calibration completed.')
 
-def calibrate_headpose(n_repeat=5, bits=numpy.array([1,2,4,8]),
-pos=numpy.array([0, 25.68, 47.08, 64.20]), plot=True):
+def calibrate_headpose(n_repeat=5, bits=numpy.array([8,4,2,1]), pos=numpy.array([64.20, 47.08, 25.68, 0]), plot=True):
 	""""
 	Makes LEDs light up at the given postions. Subject has to align their head
 	with the lit LED and push the button so a picture is taken and the head pose is

@@ -8,7 +8,7 @@ from pathlib import Path
 _location = Path(__file__).resolve().parents[0]
 _face_landmark_path = _location/Path("shape_predictor_68_face_landmarks.dat")
 _detector = dlib.get_frontal_face_detector()
-_predictor = dlib.shape_predictor(face_landmark_path)
+_predictor = dlib.shape_predictor(str(_face_landmark_path))
 _mtx=None #camera matrix
 _dist=None #distortion coefficients
 
@@ -159,7 +159,7 @@ def get_pose_from_image(image_path, plot=False, undistort=True):
     # Camera matrix describing the transformtaion from camera to image coordinates
     # the focal lenth is approximated as as the image width and the optical center
     # as the center of the image
-    if not _mtx:
+    if _mtx is None:
         print("WARNING! No camera matrix loaded!\n"
         "The matrix will be approximated but this is less precise...")
         focal_length = size[1]
@@ -170,7 +170,7 @@ def get_pose_from_image(image_path, plot=False, undistort=True):
                              [0, 0, 1]], dtype = "double"
                              )
 
-    if not _dist:
+    if _dist is None:
         print("WARNING! No distortion coefficients loaded!\n"
         "distortion effects will be ignored...")
         _dist = np.zeros((4,1)) # assuming no lens distortion
@@ -193,11 +193,11 @@ def get_pose_from_image(image_path, plot=False, undistort=True):
                             [0.000000, -7.415691, 4.070434]])
 
     # Get corresponding 2D points in the image:
-    face_rects = detector(im, 0)
+    face_rects = _detector(im, 0)
     if not face_rects:
         print("ERROR! Are you sure this is a face?")
         return None, None, None
-    shape = predictor(im, face_rects[0])
+    shape = _predictor(im, face_rects[0])
     shape = face_utils.shape_to_np(shape)
     image_pts = np.float32([shape[17], shape[21], shape[22],shape[26], shape[36],shape[39],
     shape[42], shape[45], shape[31], shape[35], shape[48], shape[54], shape[57], shape[8]])
@@ -228,13 +228,13 @@ def project_points_on_image(im, shape, euler_angle, rotation_vec, translation_ve
     for (x, y) in shape:
         cv2.circle(im, (x, y), 1, (0, 0, 255), -1)
         cv2.putText(im, "X: " + "{:7.2f}".format(euler_angle[0, 0]), (20, 20), cv2.FONT_HERSHEY_SIMPLEX,
-            0.75, (0, 0, 0), thickness=2)
+            0.75, (255, 255, 255), thickness=2)
         cv2.putText(im, "Y: " + "{:7.2f}".format(euler_angle[1, 0]), (20, 50), cv2.FONT_HERSHEY_SIMPLEX,
-            0.75, (0, 0, 0), thickness=2)
+            0.75, (255, 255, 255), thickness=2)
         cv2.putText(im, "Z: " + "{:7.2f}".format(euler_angle[2, 0]), (20, 80), cv2.FONT_HERSHEY_SIMPLEX,
-            0.75, (0, 0, 0), thickness=2)
+            0.75, (255, 255, 255), thickness=2)
         cv2.imshow("Head Pose", im)
-    cv2.waitKey(0
+    cv2.waitKey(0)
 
 def undistort_image(im):
     h,  w = im.shape[:2]

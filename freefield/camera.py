@@ -8,7 +8,7 @@ import numpy as np
 import dlib
 from imutils import face_utils
 from pathlib import Path
-from freefield_toolbox import setup
+from freefield import setup
 import tempfile
 import shutil
 import glob
@@ -237,11 +237,11 @@ def project_points_on_image(im, shape, euler_angle, rotation_vec, translation_ve
     for (x, y) in shape:
         cv2.circle(im, (x, y), 1, (0, 0, 255), -1)
         cv2.putText(im, "X: " + "{:7.2f}".format(euler_angle[0, 0]), (20, 20), cv2.FONT_HERSHEY_SIMPLEX,
-            0.75, (0, 0, 0), thickness=2)
+            0.75, (255, 255, 255), thickness=2)
         cv2.putText(im, "Y: " + "{:7.2f}".format(euler_angle[1, 0]), (20, 50), cv2.FONT_HERSHEY_SIMPLEX,
-            0.75, (0, 0, 0), thickness=2)
+            0.75, (255, 255, 255), thickness=2)
         cv2.putText(im, "Z: " + "{:7.2f}".format(euler_angle[2, 0]), (20, 80), cv2.FONT_HERSHEY_SIMPLEX,
-            0.75, (0, 0, 0), thickness=2)
+            0.75, (255, 255, 255), thickness=2)
         cv2.imshow("Head Pose", im)
     cv2.waitKey(0)
 

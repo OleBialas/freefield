@@ -8,7 +8,7 @@ import numpy as np
 import dlib
 from imutils import face_utils
 from pathlib import Path
-from freefield_toolbox import setup
+from freefield import setup
 import tempfile
 import shutil
 import glob

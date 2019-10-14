@@ -9,7 +9,7 @@ import collections
 import numpy
 import slab
 import win32com.client
-from freefield_toolbox import camera
+from freefield import camera
 
 # internal variables here:
 _verbose = False

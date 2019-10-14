@@ -107,14 +107,16 @@ def set_variable(variable, value, proc='RX8s'):
 	Set a variable on a processor to a value. Setting will silently fail if
 	variable does not exist in the rcx file. The function will use SetTagVal
 	or WriteTagV correctly, depending on whether len(value) == 1 or is > 1.
-	proc can be 'RP2', 'RX81', 'RX82', 'RX8s', or , or the index of the device
+	proc can be 'RP2', 'RX81', 'RX82', 'RX8s', or "all", or the index of the device
 	in _procs (0 = RP2, 1 = RX81, 2 = RX82), or a list of indices.
 	'RX8s' sends the value to all RX8 processors.
 	Example:
 	set_variable('stimdur', 90, proc='RX8s')
 	'''
 	if isinstance(proc, str):
-		if proc == 'RX8s':
+		if proc =="all":
+			proc = [_procs._fields.index('RX81'),_procs._fields.index('RX82'),_procs._fields.index('RP2')]
+		elif proc == 'RX8s':
 			proc = [_procs._fields.index('RX81'),_procs._fields.index('RX82')]
 		else:
 			proc = [_procs._fields.index(proc)]

@@ -191,7 +191,6 @@ def get_speaker_from_direction(azimuth=0, elevation=0):
 	Returns the speaker, channel, and RX8 index that the speaker
 	at a given azimuth and elevation is attached to.
 	'''
-
 	row = int(numpy.argwhere(numpy.logical_and(_speaker_table[:,3]==azimuth, _speaker_table[:,4]==elevation)))
 	return _speaker_table[row,0:3] # returns speaker, channel, and RX8 index
 
@@ -239,6 +238,31 @@ def get_headpose(n_images=10):
 
 def printv(*args, **kwargs):
 	if _verbose: print(*args, **kwargs)
+
+def get_recording_delay(distance=1.6, samplerate=48828.125, da_delay=None, ad_delay=None):
+	"""
+	Calculate the delay it takes for played sound to be recorded. Depends on
+	the distance of the microphone from the speaker and on the digital-to-analog
+	and analog-to-digital conversion delays of the devices.
+	"""
+	n_sound_traveling = int(distance/343*samplerate)
+	if da_delay:
+		if da_delay=="RX8":
+			n_da = 24
+		elif da_delay=="RP2":
+			n_da = 30
+		else:
+			raise ValueError("Input %s not understood!" %(da_delay))
+	else: n_da = 0
+	if ad_delay:
+		if ad_delay=="RX8":
+			n_ad = 47
+		elif ad_delay=="RP2":
+			n_ad = 65
+		else:
+			raise ValueError("Input %s not understood!" %(ad_delay))
+	else: n_ad=0
+	return n_sound_traveling+n_da+n_ad
 
 # functions implementing complete procedures
 def calibrate_speakers():

@@ -5,13 +5,13 @@ sys.path.append("C:/Projects/freefield_toolbox")
 import slab
 from freefield import setup as fs
 import os
+from scipy import signal
 import time
 cd = fs._location.parent
 rx8_path=os.path.join(cd,"examples", "play_buf.rcx")
 rp2_path=os.path.join(cd,"examples", "rec_buf.rcx")
 
 def record_transfer_function(sound="chirp",dur=0.04, n_reps=10, samplerate=48828.125, speakers="all", setup="dome"):
-
     fs.set_speaker_config(setup)
     fs.initialize_devices(RX81_file=rx8_path, RX82_file=rx8_path, RP2_file=rp2_path, ZBus=True)
     out_path = os.path.join(cd, "transfer_functions", setup)
@@ -46,4 +46,24 @@ def record_transfer_function(sound="chirp",dur=0.04, n_reps=10, samplerate=48828
                 time.sleep(0.5)
                 sound_out[n] = fs.get_variable(variable="data_ch1",n_samples=sound_in.nsamples+1000, proc="RP2")
             sound_out = slab.Sound(data=sound_out, samplerate=48828)
-            sound_out.write(os.path.join(out_path,fname))
+
+
+def impulse_response(played_signal, recorded_signals):
+
+    fs = played_signal.samplerate
+    Tr = played_signal.duration
+    T = recorded_signals.duration
+    x = played_signal.data.flatten()
+
+    for i in range(recorded_signals.nchannels):
+        y = recorded_signals[:,i]
+        h = 1/len(y) * signal.fftconvolve(y, x[::-1], mode='full')
+
+    plt.figure(figsize=(10, 5))
+    t = 1/fs * np.arange(len(h))
+    plt.plot(t, h)
+
+
+    plt.axis([0.0, 1.0, -1.1*np.max(np.abs(h)), 1.1*np.max(np.abs(h))])
+    plt.xlabel(r'$t$ in s')
+    plt.ylabel(r'$\hat{h}[k]$');

@@ -30,12 +30,14 @@ def record_transfer_function(sound="chirp",dur=0.04, n_reps=10, samplerate=48828
             raise ValueError("Unkown sound type!")
         sound_in.level=100
         sound_in.ramp(duration=dur/10, when="both")
+        delay_samples = fs.get_recording_delay(da_delay="RX8", ad_delay="RP2")
+        fs.set_variable(variable="delay",value=delay_samples, proc="RP2")
         fs.set_variable(variable="playbuflen",value=sound_in.nsamples,proc="RX8s")
         fs.set_variable(variable="data",value=sound_in.data ,proc="RX8s")
-        fs.set_variable(variable="recbuflen",value=sound_in.nsamples+1000, proc="RP2")
+        fs.set_variable(variable="recbuflen",value=sound_in.nsamples+delay_samples, proc="RP2")
         for i in speakers:
             fname = "speaker_%s_%sms_%s_tf.wav"%(i,int(dur*1000),sound)
-            sound_out = np.zeros((n_reps, sound_in.nsamples+1000))
+            sound_out = np.zeros((n_reps, sound_in.nsamples))
             channel, rx8, azimuth, elevation = fs.speaker_from_number(i)
             fs.set_variable(variable="chan",value=channel, proc="RX8"+str(rx8))
             time.sleep(0.5)
@@ -44,9 +46,12 @@ def record_transfer_function(sound="chirp",dur=0.04, n_reps=10, samplerate=48828
                 while fs.get_variable(variable="recording", proc="RP2"):
                     time.sleep(0.01)
                 time.sleep(0.5)
-                sound_out[n] = fs.get_variable(variable="data_ch1",n_samples=sound_in.nsamples+1000, proc="RP2")
-            sound_out = slab.Sound(data=sound_out, samplerate=48828)
-
+                rec = fs.get_variable(variable="data_ch1",n_samples=sound_in.nsamples+delay_samples, proc="RP2")
+                sound_out[n] = rec[delay_samples::]
+            sound_out = slab.Sound(data=sound_out, samplerate=samplerate)
+            sound_out.write(os.path.join(out_path,fname),normalise=True)
+    sound_in.write(os.path.join(out_path,"%sms_%s.wav"%(int(dur*1000),sound)),normalise=True)
+    fs.halt()
 
 def impulse_response(played_signal, recorded_signals):
 

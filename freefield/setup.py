@@ -264,6 +264,23 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, da_delay=None, ad_de
 	else: n_ad=0
 	return n_sound_traveling+n_da+n_ad
 
+def makesound(duration=1.0, kind="chirp", samplerate=48828.125, level=90, even_n=True):
+	"""
+	Generate a sound using the slab toolbox
+	"""
+	if kind.lower()=="chirp":
+		sound = slab.Sound.chirp(duration=duration, samplerate=samplerate)
+	elif kind.lower()=="whitenoise":
+		sound = slab.Sound.whitenoise(duration=duration, samplerate=samplerate)
+	elif kind.lower()=="pinknoise":
+		sound = slab.Sound.pinknoise(duration=duration, samplerate=samplerate)
+	else:
+		raise ValueError("Unkown sound type!")
+	sound.level = level
+	if even_n and bool(sound.nsamples%2):
+		sound.resize(sound.nsamples+1)
+	return sound
+
 # functions implementing complete procedures
 def calibrate_speakers():
 	'''

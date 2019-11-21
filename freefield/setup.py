@@ -324,8 +324,8 @@ def calibrate_headpose(n_repeat=5, bits=numpy.array([8,4,2,1]), pos=numpy.array(
 	"""
 	from sklearn.linear_model import LinearRegression
 	from matplotlib import pyplot as plt
-	rp2_file = _location.parents[0]/Path("example/button_response.rcx")
-	rx8_file = _location.parents[0]/Path("example/to_bits.rcx")
+	rp2_file = _location.parents[0]/Path("examples/button_response.rcx")
+	rx8_file = _location.parents[0]/Path("examples/to_bits.rcx")
 	if not _speaker_config:
 		set_speaker_config("arc")
 	initialize_devices(RX81_file=rx8_file, RP2_file=rp2_file, ZBus=True, cam=True)

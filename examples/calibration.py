@@ -3,6 +3,7 @@ import sys
 sys.path.append("C:/Projects/soundtools")
 sys.path.append("C:/Projects/freefield_toolbox")
 import slab
+from slab.filter import Filter
 from freefield import setup as fs
 import os
 from scipy import signal
@@ -61,3 +62,11 @@ def record_hp_tf(sound="chirp",dur=0.04, n_reps=10, samplerate=48828.125):
     sound_out=slab.Sound(data=np.array([left,right]).T, samplerate=samplerate)
     sound_in.write(os.path.join(out_path,"%sms_%s.wav"%(int(dur*1000),sound)),normalise=True)
     sound_out.write(os.path.join(out_path,"k1000_%sms_%s.wav"%(int(dur*1000),sound)),normalise=True)
+
+
+def make_inverse_filters(speakers="all", setup="arc"):
+    path = "C:\\Projects\\freefield_toolbox\\transfer_functions\\arc\\"
+    played_signal = slab.Sound(path+"40ms_chirp.wav")
+    for i in range(47):
+        recorded_signals = slab.Sound(path+"speaker_1_40ms_chirp_tf.wav")
+        filterbank = Filter.equalizing_filterbank(played_signal, recorded_signals)

@@ -31,6 +31,13 @@ def init(setup, speakers="all", sound="sweep"):
     """
     setup.set_speaker_config(setup)
     setup.initialize_devices(RX81_file=rx8_path, RX82_file=rx8_path, RP2_file=rp2_path, ZBus=True)
+    # get entrys from the speaker table. Each row contains channel, rx8,
+    # azimuth and elevation of one speaker
+    if speakers="all":
+        _speakers=[setup.speaker_from_number(i) for i in range(1,48)]
+    else:
+        _speakers=
+
 
 def play_and_record():
     """
@@ -40,7 +47,7 @@ def play_and_record():
         raise ValueError("procedure be initialized first!")
     else:
         for speker in speakers:
-            
+
         setup.set_variable(variable="playbuflen",value=sound_in.nsamples,proc="RX8s")
         setup.set_variable(variable="data",value=sound_in.data ,proc="RX8s")
         setup.set_variable(variable="recbuflen",value=sound_in.nsamples+delay_samples, proc="RP2")

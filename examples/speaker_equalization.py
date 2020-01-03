@@ -12,6 +12,7 @@ try:
 except:
     raise ImportError("could not find the slab toolbox module!")
 import os
+import numpy
 cd = setup._location.parent
 rx8_path=os.path.join(cd,"examples", "play_buf.rcx")
 rp2_path=os.path.join(cd,"examples", "rec_buf.rcx")
@@ -36,7 +37,8 @@ def init(setup, speakers="all", sound="sweep"):
     if speakers="all":
         _speakers=[setup.speaker_from_number(i) for i in range(1,48)]
     else:
-        _speakers=
+        _speakers=[setup.speaker_from_number(i) for i in range(1,48)]
+
 
 
 def play_and_record():

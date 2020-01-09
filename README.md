@@ -12,7 +12,8 @@ Assumes that there is a tag with the name "playback" that referes to a variable 
 Here is a list of tags that are currently used in toolbox functions:
 
 ```
-"chan" # int, number of the analog I/O channel
-"playback" # bool, indicates if something is being played back or recorded
-"playbuflen" # int, the duration in samples for which the circuit is running after triggering
+"chan" # int, number of the analog I/O channel.
+"playback" # bool, indicates if something is being played back or recorded.
+"playbuflen" # int, the duration in samples for which the circuit is running after triggering.
+"data" # array of floats, data stored in the memory of the device. Can be read and written to.
 ```

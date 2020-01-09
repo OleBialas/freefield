@@ -40,7 +40,6 @@ def init(setup, speakers="all", sound="sweep"):
         _speakers=[setup.speaker_from_number(i) for i in range(1,48)]
 
 
-
 def play_and_record():
     """
     Play the sound from each speaker and record the ouput

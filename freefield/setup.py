@@ -1,7 +1,6 @@
 '''
 Functions and classes for working with the freefield dome and arc.
 '''
-# TODO: speaker numbers and RX8 indices should be zero-based for consistency!
 
 import time
 from pathlib import Path
@@ -25,11 +24,17 @@ _calibration_filter = None
 _speaker_table = None
 _procs = None
 _location = Path(__file__).resolve().parents[0]
+_samplerate = 48828  # Our devices are usually operated at this samplerate --> change default from slab.signal
 
 
 def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None, RP2_file=None, RX8_file=None, cam=False,
                        connection='GB'):
-    'Initialize the ZBus, RX8s, and RP2 with the respective rcx files.'
+    """
+    Initialize the different TDT-devices. The input for ZBus and cam is True or False, depending on whether you
+    want to use ZBus triggering and the cameras or not. The input for the other devices has to be a string with the
+    full path to a .rcx file which will be used to initialize the processor. Use the argument RX8_file to initialize
+    RX81 and RX82 with the same file. Initialzation will take a few seconds per device
+    """
     global _procs
     if not _speaker_config:
         raise ValueError("Please set device to 'arc' or 'dome' before initialization!")
@@ -150,6 +155,11 @@ def set_variable(variable, value, proc='RX8s'):
         else:
             _procs[p].SetTagVal(variable, value)
             printv(f'Set {variable} to {value} on {_procs._fields[p]}.')
+
+
+def set_samplerate(x):
+    global _samplerate
+    _samplerate = x
 
 
 def get_variable(variable=None, n_samples=1, proc='RX81'):

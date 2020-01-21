@@ -48,7 +48,7 @@ def init(setup="dome", speakers="all", sound="sweep", dur=0.04):
         _sound=slab.Sound.chirp(dur, samplerate=_samplerate)
     elif sound=="noise":
         _sound=slab.Sound.whitenoise(dur, samplerate=_samplerate)
-    _recordings = np.zeros([sound.nsamples+1000, len(_speakers)])
+    _recordings = np.zeros([_sound.nsamples+1000, len(_speakers)])
     setup.set_variable(variable="playbuflen", value=_sound.nsamples, proc="RX8s")
     # Buffer for recording should be longer to compensate for sound traveling delay
     setup.set_variable(variable="playbuflen", value=_sound.nsamples+1000, proc="RP2")
@@ -74,3 +74,15 @@ def play_and_record():
 def make_inverse_filter():
 
     filterbank = slab.Filter.equalizing_filterbank(_sound, _recordings)
+    #apply filter bank and test if equalization was effective:
+    equalized_recordings = filterbank.apply(_recordings)
+    fbank = slab.Filter.cos_filterbank(length=1000, low_lim=50, hi_lim=20000, bandwidth=1/5,
+                                       samplerate=_recordings.samplerate)
+    equalized_levels = fbank.apply(equalized_recordings)
+    levels_in = fbank.apply(played_signal).level
+    levels_in = np.tile(levels_in, (recorded_signals.nchannels, 1)).T  # same shaoe as levels_out
+    levels_out = numpy.ones((len(center_freqs), recorded_signals.nchannels))
+    for idx in range(recorded_signals.nchannels):
+        levels_out[:, idx] = fbank.apply(recorded_signals.channel(idx)).level
+
+

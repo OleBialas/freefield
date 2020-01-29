@@ -118,9 +118,11 @@ def set_speaker_config(setup='arc'):
     else:
         raise ValueError("Unknown device! Use 'arc' or 'dome'.")
     printv(f'Speaker configuration set to {setup}.')
-    _speaker_table = numpy.loadtxt(fname=table_file, delimiter='\t', skiprows=1, converters={3: lambda s: float(s or 0),
+    _speaker_table = numpy.loadtxt(fname=table_file, delimiter=',', skiprows=1, converters={3: lambda s: float(s or 0),
                                                                                              4: lambda s: float(
                                                                                                  s or 0)})  # lambdas provide default values of 0 if azi or ele are not in the file
+    idx = numpy.where(_speaker_table==-999.)
+    _speaker_table[idx[0],idx[1]]=None # change the placeholder -999 to None
     printv('Speaker table loaded.')
     if _calibration_file.exists():
         _calibration_filter = slab.Filter.load(_calibration_file)
@@ -223,7 +225,7 @@ def wait_to_finish_playing(proc='RX8s', tagname="playback"):
     printv('Done waiting.')
 
 
-def get_speaker_from_direction(azimuth=0, elevation=0):
+def speaker_from_direction(azimuth=0, elevation=0):
     '''
 	Returns the speaker, channel, and RX8 index that the speaker
 	at a given azimuth and elevation is attached to.
@@ -245,6 +247,13 @@ def speaker_from_number(speaker):
 
     return channel, rx8, azimuth, elevation
 
+def all_leds():
+    """
+    Get speaker, RX8 index, and bitmask of all speakers which have a LED attached
+    --> won't be necessary once all speakers have LEDs
+    """
+    idx = numpy.where(_speaker_table[:,5]!=-999)[0]
+    return _speaker_table[idx]
 
 def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=True):
     '''
@@ -326,7 +335,7 @@ def makesound(duration=1.0, kind="chirp", samplerate=48828.125, level=90, even_n
 
 
 # functions implementing complete procedures
-def calibrate_speakers():
+def equalize_speakers(n_repeat=10, rec_delay=1000):
     '''
 	Calibrate all speakers in the array by presenting a sound from each one,
 	recording, computing inverse filters, and saving the calibration file.
@@ -335,21 +344,23 @@ def calibrate_speakers():
     printv('Starting calibration.')
     slab.Signal.set_default_samplerate(48828.125)
     sig = slab.Sound.chirp(duration=10000, from_freq=100, to_freq=None, kind='quadratic')
-    initialize_devices(RP2_file='calibration_RP2.rco', RX8_file='calibration_RX8.rco', connection='GB')
-    input('Set up microphone. Press any key to start calibration...')
-    set_variable(variable='signal', value=sig, proc='RX8s')
-    recording = numpy.zeros((sig.nsamples, 48))
-    for speaker in range(48):
-        set_variable(variable='chan', value=speaker + 1, proc='RX8s')
-        for i in range(10):
-            trigger()  # zBusA by default
-            wait_to_finish_playing()
-            if i == 0:  # first iteration
-                rec = get_variable(variable='recording', proc='RP2')
-            else:
-                rec = rec + get_variable(variable='recording', proc='RP2')
-        recording[:, speaker] = rec / 10  # averaging
-    recording = slab.Sound(recording)  # make a multi-channel sound object
+    initialize_devices(RP2_file=_location/"examples"/"rec_buf.rcx", RX8_file=_location/"examples"/"rec_buf.rcx", connection='GB')
+    set_variable(variable="playbuflen", value=sig.nsamples, proc="RX8s")
+    # Buffer for recording should be longer to compensate for sound traveling delay
+    set_variable(variable="playbuflen", value=sig.nsamples+rec_delay, proc="RP2")
+    set_variable(variable="data", value=sig.data, proc="RX8s")
+    recordings = numpy.zeros((sig.nsamples, len(_speaker_table)))
+    for i, row in enumerate(_speaker_table): ######
+        if row[0] != row[0]: # don't play sound if speaker number is NaN
+            set_variable(variable='chan', value=row[1], proc='RX8s')
+            rec=numpy.zeros(sig.nsamples+rec_delay, n_repeat)
+            for n in range(n_repeat):
+                trigger()
+                wait_to_finish_playing(proc="all")
+                rec[:,n] = get_variable(variable='recording', proc='RP2')
+            recordings[:,i] = rec.mean(axis=1)
+
+    recordings = slab.Sound(recordings)  # make a multi-channel sound object
     filt = slab.Filter.equalizing_filterbank(sig, recording)  # make inverse filter
     # rename old filter file, if it exists, by appending current date
     if _calibration_file.exists():
@@ -359,45 +370,3 @@ def calibrate_speakers():
     filt.save(_calibration_file)  # save filter file to 'calibration_arc.npy' or dome.
     printv('Calibration completed.')
 
-
-def calibrate_headpose(n_repeat=5, bits=numpy.array([8, 4, 2, 1]), pos=numpy.array([64.20, 47.08, 25.68, 0]),
-                       plot=True):
-    """"
-	Makes LEDs light up at the given postions. Subject has to align their head
-	with the lit LED and push the button so a picture is taken and the head pose is
-	determined. Then we can determine the coefficients of the linear regression for
-	led position vs measured head position
-	"""
-    from sklearn.linear_model import LinearRegression
-    from matplotlib import pyplot as plt
-    rp2_file = _location.parents[0] / Path("examples/button_response.rcx")
-    rx8_file = _location.parents[0] / Path("examples/to_bits.rcx")
-    if not _speaker_config:
-        set_speaker_config("arc")
-    initialize_devices(RX81_file=rx8_file, RP2_file=rp2_file, ZBus=True, cam=True)
-    trials = numpy.tile(bits, n_repeat)
-    results = numpy.zeros([len(trials), 2])
-    results[:, 0] = trials
-    for i, count in zip(trials, range(len(trials))):
-        print("trial nr" + str(count))
-        set_variable(variable="set_zero", value=False, proc="RX81")
-        set_variable(variable="bitval", value=int(i), proc="RX81")
-        tic = time.time()
-        while not get_variable(variable="response", proc="RP2"):
-            time.sleep(0.1)  # wait untill button is pressed
-        set_variable(variable="set_zero", value=True, proc="RX81")
-        x, y, z = camera.get_headpose(n=5)
-        if y is not None:
-            results[count, 1] = y
-            results[count, 0] = pos[numpy.where(bits == i)[0][0]]
-
-    linear_regressor = LinearRegression()
-    linear_regressor.fit(results[:, 0].reshape(-1, 1), results[:, 1].reshape(-1, 1))
-    pred = linear_regressor.predict(results[:, 0].reshape(-1, 1))
-
-    if plot:
-        plt.scatter(results[:, 0].reshape(-1, 1), results[:, 1].reshape(-1, 1))
-        plt.plot(results[:, 0].reshape(-1, 1), pred)
-        plt.show()
-
-    return results, linear_regressor

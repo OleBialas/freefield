@@ -387,12 +387,12 @@ def equalize_speakers(n_repeat=10, rec_delay=1000):
                 rec[:, n] = get_variable(variable='recording', proc='RP2')
             recordings[:, i] = rec.mean(axis=1)
     # make inverse filter
-    recordings = slab.Sound(recordings
-    filt=slab.Filter.equalizing_filterbank(sig, recording)
+    recordings = slab.Sound(recordings)
+    filt = slab.Filter.equalizing_filterbank(sig, recordings)
     # rename old filter file, if it exists, by appending current date
     if _calibration_file.exists():
-        date=datetime.datetime.now().strftime("time: %Y-%m-%d-%H-%M-%S")
-        rename_previous=_calibration_file.parent / \
+        date = datetime.datetime.now().strftime("time: %Y-%m-%d-%H-%M-%S")
+        rename_previous = _calibration_file.parent / \
             Path(_calibration_file.stem + date + _calibration_file.suffix)
         _calibration_file.rename(rename_previous)
     # save filter file to 'calibration_arc.npy' or dome.

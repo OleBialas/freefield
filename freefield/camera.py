@@ -36,6 +36,15 @@ _object_pts = numpy.float32([[6.825897, 6.760612, 4.402142],
                              [0.000000, -3.116408, 6.097667],
                              [0.000000, -7.415691, 4.070434]])
 
+_reprojectsrc = numpy.float32([[10.0, 10.0, 10.0],
+                               [10.0, 10.0, -10.0],
+                               [10.0, -10.0, -10.0],
+                               [10.0, -10.0, 10.0],
+                               [-10.0, 10.0, 10.0],
+                               [-10.0, 10.0, -10.0],
+                               [-10.0, -10.0, -10.0],
+                               [-10.0, -10.0, 10.0]])
+
 
 def init(multiprocess=False):
     global _cam_list, _system, _pool
@@ -132,7 +141,44 @@ def get_headpose(n=4):
     return avg, std
 
 
-def _get_pose_from_image(image, plot=False):
+def plot_headpose():
+    """
+    Acquire an image, compute the headpose and then plot the acquired image
+    with the fitted mask of model points and the computed angles
+    """
+    images = _acquire_images(1)  # take one image
+
+    for image in images:
+        euler_angle, shape, rotation_vec, translation_vec, _mtx, _dist = \
+            _get_pose_from_image(just_pose=False)
+
+    reprojectdst, _ = cv2.projectPoints(_reprojectsrc, rotation_vec,
+                                        translation_vec, _mtx, _dist)
+    reprojectdst = tuple(map(tuple, reprojectdst.reshape(8, 2)))
+
+    for (x, y) in shape:
+        cv2.circle(image, (x, y), 1, (0, 0, 255), -1)
+        cv2.putText(image, "X: " + "{:7.2f}".format(euler_angle[0, 0]),
+                    (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
+                    thickness=2)
+        cv2.putText(image, "Y: " + "{:7.2f}".format(euler_angle[1, 0]),
+                    (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
+                    thickness=2)
+        cv2.putText(image, "Z: " + "{:7.2f}".format(euler_angle[2, 0]),
+                    (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
+                    thickness=2)
+        cv2.imshow("Head Pose", image)
+    cv2.waitKey(0)
+
+
+def _get_pose_from_image(image, just_pose=True):
+    """
+    Compute the head pose from an image, which must be a 2d (grayscale) or
+    3d (color) numpy array. If just_pose=True (default), only angles azimuth,
+    elevation and tilt are returned. If False also face shape, rotation vector,
+    translation vector, camera matrix , and distortion are returned. This is
+    nesseccary to plot the image with the computed headpose.
+    """
     global _mtx, _dist
     if not numpy.sum(_mtx):
         size = image.shape
@@ -164,41 +210,10 @@ def _get_pose_from_image(image, plot=False):
     rotation_mat, _ = cv2.Rodrigues(rotation_vec)
     pose_mat = cv2.hconcat((rotation_mat, translation_vec))
     _, _, _, _, _, _, euler_angle = cv2.decomposeProjectionMatrix(pose_mat)
-    if plot:
-        project_points_on_image(image, shape, euler_angle,
-                                rotation_vec, translation_vec)
-    return euler_angle[0, 0], euler_angle[1, 0], euler_angle[2, 0]  # x,y,z
-
-
-def project_points_on_image(image, shape, euler_angle, rotation_vec,
-                            translation_vec):
-
-    reprojectsrc = numpy.float32([[10.0, 10.0, 10.0],
-                                  [10.0, 10.0, -10.0],
-                                  [10.0, -10.0, -10.0],
-                                  [10.0, -10.0, 10.0],
-                                  [-10.0, 10.0, 10.0],
-                                  [-10.0, 10.0, -10.0],
-                                  [-10.0, -10.0, -10.0],
-                                  [-10.0, -10.0, 10.0]])
-
-    reprojectdst, _ = cv2.projectPoints(reprojectsrc, rotation_vec,
-                                        translation_vec, _mtx, _dist)
-    reprojectdst = tuple(map(tuple, reprojectdst.reshape(8, 2)))
-
-    for (x, y) in shape:
-        cv2.circle(image, (x, y), 1, (0, 0, 255), -1)
-        cv2.putText(image, "X: " + "{:7.2f}".format(euler_angle[0, 0]),
-                    (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
-                    thickness=2)
-        cv2.putText(image, "Y: " + "{:7.2f}".format(euler_angle[1, 0]),
-                    (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
-                    thickness=2)
-        cv2.putText(image, "Z: " + "{:7.2f}".format(euler_angle[2, 0]),
-                    (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
-                    thickness=2)
-        cv2.imshow("Head Pose", image)
-    cv2.waitKey(0)
+    if just_pose:
+        return euler_angle[0, 0], euler_angle[1, 0], euler_angle[2, 0]  # x,y,z
+    else:
+        return euler_angle, shape, rotation_vec, translation_vec, _mtx, _dist
 
 
 def calibrate_camera(positions, speaker_config="dome"):

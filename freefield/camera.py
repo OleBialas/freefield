@@ -150,7 +150,7 @@ def plot_headpose():
 
     for image in images:
         euler_angle, shape, rotation_vec, translation_vec, _mtx, _dist = \
-            _get_pose_from_image(just_pose=False)
+            _get_pose_from_image(image[0], just_pose=False)
 
     reprojectdst, _ = cv2.projectPoints(_reprojectsrc, rotation_vec,
                                         translation_vec, _mtx, _dist)

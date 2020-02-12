@@ -21,6 +21,7 @@ _speaker_table = None
 _procs = None
 _location = Path(__file__).resolve().parents[0]
 _samplerate = 48828  # inherit from slab?
+_last_pint = None
 
 
 def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None,
@@ -192,7 +193,7 @@ def set_samplerate(x):
     _samplerate = x
 
 
-def get_variable(variable=None, n_samples=1, proc='RX81'):
+def get_variable(variable=None, n_samples=1, proc='RX81', supress_print=False):
     '''
         Get the value of a variable from a processor. Returns None if variable
         does not exist in the rco file. proc can be 'RP2', 'RX81', 'RX82', or
@@ -206,7 +207,8 @@ def get_variable(variable=None, n_samples=1, proc='RX81'):
         value = numpy.asarray(_procs[proc].ReadTagV(variable, 0, n_samples))
     else:
         value = _procs[proc].GetTagVal(variable)
-    printv(f'Got {variable} from {_procs._fields[proc]}.')
+    if not supress_print:
+        printv(f'Got {variable} from {_procs._fields[proc]}.')
     return value
 
 
@@ -250,8 +252,8 @@ def wait_to_finish_playing(proc='RX8s', tagname="playback"):
     else:
         proc = [proc]
     printv(f'Waiting for {tagname} on {proc}.')
-    while any(get_variable(variable=tagname, n_samples=1,
-                           proc=processor) for processor in proc):
+    while any(get_variable(variable=tagname, n_samples=1, proc=processor,
+                           supress_print=True) for processor in proc):
         time.sleep(0.01)
     printv('Done waiting.')
 
@@ -322,8 +324,10 @@ def get_headpose(n_images=10):
 
 
 def printv(*args, **kwargs):
+    global _last_print
     if _verbose:
         print(*args, **kwargs)
+    # TODO: Only print if the same message hasn't been printed before
 
 
 def get_recording_delay(distance=1.6, samplerate=48828.125, da_delay=None,
@@ -368,8 +372,8 @@ def equalize_speakers(n_repeat=10, rec_delay=1000):
     slab.Signal.set_default_samplerate(48828.125)
     sig = slab.Sound.chirp(duration=10000, from_freq=100,
                            to_freq=None, kind='quadratic')
-    initialize_devices(RP2_file=_location/"examples"/"rec_buf.rcx",
-                       RX8_file=_location/"examples"/"rec_buf.rcx",
+    initialize_devices(RP2_file=_location/"rcx"/"rec_buf.rcx",
+                       RX8_file=_location/"rcx"/"rec_buf.rcx",
                        connection='GB')
     set_variable(variable="playbuflen", value=sig.nsamples, proc="RX8s")
     # longer buffer for recording to compensate for sound traveling delay

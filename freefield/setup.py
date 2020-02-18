@@ -362,7 +362,7 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
 # functions implementing complete procedures:
 
 
-def equalize_speakers(thresh=75, plot=True):
+def equalize_speakers(thresh=75, show_plot=False, test_filt=True):
     '''
         Calibrate all speakers in the array by presenting a sound
         from each one, recording, computing inverse filters, and saving
@@ -382,23 +382,25 @@ def equalize_speakers(thresh=75, plot=True):
     set_variable(variable="playbuflen",
                  value=sig.nsamples+rec_delay, proc="RP2")
     set_variable(variable="data", value=sig.data, proc="RX8s")
-    recordings = numpy.zeros((sig.nsamples, len(_speaker_table)))
+    rec = numpy.zeros((sig.nsamples, len(_speaker_table)))
     for i, row in enumerate(_speaker_table):
         if row[0] != row[0]:  # don't play sound if speaker number is NaN
             set_variable(variable='chan', value=row[1], proc='RX8s')
             trigger()
             wait_to_finish_playing(proc="all")
-            recordings[:, i] = get_variable(variable='recording', proc='RP2')
+            # load recording from device buffer throw away the first n samples
+            # to compensate for the recording delay
+            rec[:, i] = get_variable(
+                variable='recording', proc='RP2',
+                n_samples=sig.nsamples+rec_delay)[rec_delay:-rec_delay]
     # make inverse filter
-    recordings = slab.Sound(recordings)
+    rec = slab.Sound(rec)
     # Set the recordings with sub-treshold level equal to the signal, so the
     # resulting filter will be flat:
-    recordings.data[:, numpy.where(recordings.level < thresh)[0]] = sig.data
-    filt = slab.Filter.equalizing_filterbank(sig, recordings)
-    if plot:  # plot signal, recording and filter for each speaker
-        for i, row in enumerate(_speaker_table):
-            pass
-            # rename old filter file, if it exists, by appending current date
+    rec.data[:, numpy.where(rec.level < thresh)[0]] = sig.data
+    filt, amp_diffs, freqs = \
+        slab.Filter.equalizing_filterbank(sig, rec, low_lim=50, hi_lim=16000)
+    # rename old filter file, if it exists, by appending current date
     if _calibration_file.exists():
         date = datetime.datetime.now().strftime("time: %Y-%m-%d-%H-%M-%S")
         rename_previous = _calibration_file.parent / \
@@ -407,3 +409,41 @@ def equalize_speakers(thresh=75, plot=True):
     # save filter file to 'calibration_arc.npy' or dome.
     filt.save(_calibration_file)
     printv('Calibration completed.')
+    for i, row in enumerate(_speaker_table):
+        fig, ax = plt.subplots(2, 2, figsize=(20., 10.))
+        fig.suptitle("Equalization Speaker Nr. %s at azimuth: %s and"
+                     "elevation: %s" % (i+1, row[3], row[4]))
+        sig.spectrum(axes=ax[0, 0], label="played_signal",
+                     c="blue", alpha=0.6)
+        rec.spectrum(axes=ax[0, 0], channel=i, alpha=0.6,
+                     label="recorded signal", c="red")
+        ax[0, 0].semilogx(freqs[1:-1], amp_diffs[:, i], c="black",
+                          label="amplitude diff.", linestyle="dashed")
+        ax[0, 0].axhline(y=0, linestyle="--", color="black", linewidth=0.5)
+        ax[0, 0].legend()
+        ax[0, 1].plot(sig.times*1000, sig.data, alpha=0.6, c="blue",
+                      label="played_signal")
+        ax[0, 1].plot(rec.times*1000, rec.data[:, i], alpha=0.6, c="red",
+                      label="recorded_signal")
+        ax[0, 1].set_title("Time Course")
+        ax[0, 1].set_ylabel("Amplitude in Volts")
+        w, h = filt.tf(channels=i, plot=False)
+        ax[1, 0].semilogx(w, h, c="black")
+        ax[1, 0].set_title("Equalization Filter Transfer Function")
+        ax[1, 0].set_xlabel("Frequency in Hz")
+        ax[1, 0].set_ylabel("Magnitude in Decibels")
+        ax[1, 1].plot(filt.times, filt.data[:, i], c="black")
+        ax[1, 1].set_title("Equalization Filter Impulse Response")
+        ax[1, 1].set_xlabel("Time in Milliseconds")
+        ax[1, 1].set_ylabel("Amplitude")
+        if show_plot:
+            plt.show()
+        plt.savefig(_location.parent/Path("log/speaker_%s_equalizing"
+                                          "_filter.jpg" % (row[0])), fig)
+        if test_filt:
+            test_equalizing_filter()
+
+
+def test_equalizing_filter():
+
+    pass

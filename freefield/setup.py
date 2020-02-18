@@ -119,7 +119,8 @@ def halt():
 
 def set_speaker_config(setup='arc'):
     'Set the freefield setup to use (arc or dome).'
-    global _speaker_config, _calibration_filter, _speaker_table
+    global _speaker_config, _calibration_filter,\
+        _speaker_table, _calibration_file
     if setup == 'arc':
         _speaker_config = 'arc'
         _calibration_file = _location / Path('calibration_filter_arc.npy')
@@ -371,10 +372,10 @@ def equalize_speakers(thresh=75, show_plot=False, test_filt=True):
     import datetime
     printv('Starting calibration.')
     slab.Signal.set_default_samplerate(48828.125)
-    sig = slab.Sound.chirp(duration=10000, from_freq=50,
+    sig = slab.Sound.chirp(duration=0.05, from_freq=50,
                            to_freq=16000, kind='linear')
-    initialize_devices(RP2_file=_location/"rcx"/"rec_buf.rcx",
-                       RX8_file=_location/"rcx"/"play_buf.rcx",
+    initialize_devices(RP2_file=_location.parent/"rcx"/"rec_buf.rcx",
+                       RX8_file=_location.parent/"rcx"/"play_buf.rcx",
                        connection='GB')
     set_variable(variable="playbuflen", value=sig.nsamples, proc="RX8s")
     # longer buffer for recording to compensate for sound traveling delay
@@ -391,8 +392,8 @@ def equalize_speakers(thresh=75, show_plot=False, test_filt=True):
             # load recording from device buffer throw away the first n samples
             # to compensate for the recording delay
             rec[:, i] = get_variable(
-                variable='recording', proc='RP2',
-                n_samples=sig.nsamples+rec_delay)[rec_delay:-rec_delay]
+                variable='data', proc='RP2',
+                n_samples=sig.nsamples+rec_delay)[rec_delay:]
     # make inverse filter
     rec = slab.Sound(rec)
     # Set the recordings with sub-treshold level equal to the signal, so the
@@ -402,15 +403,15 @@ def equalize_speakers(thresh=75, show_plot=False, test_filt=True):
         slab.Filter.equalizing_filterbank(sig, rec, low_lim=50, hi_lim=16000)
     # rename old filter file, if it exists, by appending current date
     if _calibration_file.exists():
-        date = datetime.datetime.now().strftime("time: %Y-%m-%d-%H-%M-%S")
-        rename_previous = _calibration_file.parent / \
-            Path(_calibration_file.stem + date + _calibration_file.suffix)
+        date = datetime.datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")
+        rename_previous = \
+            _location.parent / Path("log/"+_calibration_file.stem + date
+                                    + _calibration_file.suffix)
         _calibration_file.rename(rename_previous)
     # save filter file to 'calibration_arc.npy' or dome.
     filt.save(_calibration_file)
-    printv('Calibration completed.')
     for i, row in enumerate(_speaker_table):
-        fig, ax = plt.subplots(2, 2, figsize=(20., 10.))
+        fig, ax = plt.subplots(2, 2, figsize=(16., 8.))
         fig.suptitle("Equalization Speaker Nr. %s at azimuth: %s and"
                      "elevation: %s" % (i+1, row[3], row[4]))
         sig.spectrum(axes=ax[0, 0], label="played_signal",
@@ -438,12 +439,14 @@ def equalize_speakers(thresh=75, show_plot=False, test_filt=True):
         ax[1, 1].set_ylabel("Amplitude")
         if show_plot:
             plt.show()
-        plt.savefig(_location.parent/Path("log/speaker_%s_equalizing"
-                                          "_filter.jpg" % (row[0])), fig)
+        fig.savefig(_location.parent/Path("log/speaker_%s_equalizing_"
+                                          "filter.pdf" % (row[0])), dpi=1200)
+        plt.close()
+        printv('Calibration completed.')
         if test_filt:
+            printv('Testing the calibration...')
             test_equalizing_filter()
 
 
 def test_equalizing_filter():
-
     pass

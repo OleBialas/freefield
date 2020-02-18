@@ -397,7 +397,7 @@ def equalize_speakers(thresh=75, plot=True):
     filt = slab.Filter.equalizing_filterbank(sig, recordings)
     if plot:  # plot signal, recording and filter for each speaker
         for i, row in enumerate(_speaker_table):
-
+            pass
             # rename old filter file, if it exists, by appending current date
     if _calibration_file.exists():
         date = datetime.datetime.now().strftime("time: %Y-%m-%d-%H-%M-%S")

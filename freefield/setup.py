@@ -5,6 +5,7 @@ import collections
 import numpy
 import slab
 from sys import platform
+from matplotlib import pyplot as plt
 
 if "win" in platform:
     import win32com.client
@@ -330,30 +331,30 @@ def printv(*args, **kwargs):
     # TODO: Only print if the same message hasn't been printed before
 
 
-def get_recording_delay(distance=1.6, samplerate=48828.125, da_delay=None,
-                        ad_delay=None):
+def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
+                        rec_device=None):
     """
         Calculate the delay it takes for played sound to be recorded. Depends
         on the distance of the microphone from the speaker and on the devices
         digital-to-analog and analog-to-digital conversion delays.
         """
     n_sound_traveling = int(distance / 343 * samplerate)
-    if da_delay:
-        if da_delay == "RX8":
+    if play_device:
+        if play_device == "RX8":
             n_da = 24
-        elif da_delay == "RP2":
+        elif play_device == "RP2":
             n_da = 30
         else:
-            raise ValueError("Input %s not understood!" % (da_delay))
+            raise ValueError("Input %s not understood!" % (play_device))
     else:
         n_da = 0
-    if ad_delay:
-        if ad_delay == "RX8":
+    if rec_device:
+        if rec_device == "RX8":
             n_ad = 47
-        elif ad_delay == "RP2":
+        elif rec_device == "RP2":
             n_ad = 65
         else:
-            raise ValueError("Input %s not understood!" % (ad_delay))
+            raise ValueError("Input %s not understood!" % (rec_device))
     else:
         n_ad = 0
     return n_sound_traveling + n_da + n_ad
@@ -361,7 +362,7 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, da_delay=None,
 # functions implementing complete procedures:
 
 
-def equalize_speakers(n_repeat=10, rec_delay=1000):
+def equalize_speakers(thresh=75, plot=True):
     '''
         Calibrate all speakers in the array by presenting a sound
         from each one, recording, computing inverse filters, and saving
@@ -370,13 +371,14 @@ def equalize_speakers(n_repeat=10, rec_delay=1000):
     import datetime
     printv('Starting calibration.')
     slab.Signal.set_default_samplerate(48828.125)
-    sig = slab.Sound.chirp(duration=10000, from_freq=100,
-                           to_freq=None, kind='quadratic')
+    sig = slab.Sound.chirp(duration=10000, from_freq=50,
+                           to_freq=16000, kind='linear')
     initialize_devices(RP2_file=_location/"rcx"/"rec_buf.rcx",
-                       RX8_file=_location/"rcx"/"rec_buf.rcx",
+                       RX8_file=_location/"rcx"/"play_buf.rcx",
                        connection='GB')
     set_variable(variable="playbuflen", value=sig.nsamples, proc="RX8s")
     # longer buffer for recording to compensate for sound traveling delay
+    rec_delay = get_recording_delay(play_device="RX8", rec_device="RP2")
     set_variable(variable="playbuflen",
                  value=sig.nsamples+rec_delay, proc="RP2")
     set_variable(variable="data", value=sig.data, proc="RX8s")
@@ -384,16 +386,19 @@ def equalize_speakers(n_repeat=10, rec_delay=1000):
     for i, row in enumerate(_speaker_table):
         if row[0] != row[0]:  # don't play sound if speaker number is NaN
             set_variable(variable='chan', value=row[1], proc='RX8s')
-            rec = numpy.zeros(sig.nsamples+rec_delay, n_repeat)
-            for n in range(n_repeat):
-                trigger()
-                wait_to_finish_playing(proc="all")
-                rec[:, n] = get_variable(variable='recording', proc='RP2')
-            recordings[:, i] = rec.mean(axis=1)
+            trigger()
+            wait_to_finish_playing(proc="all")
+            recordings[:, i] = get_variable(variable='recording', proc='RP2')
     # make inverse filter
     recordings = slab.Sound(recordings)
+    # Set the recordings with sub-treshold level equal to the signal, so the
+    # resulting filter will be flat:
+    recordings.data[:, numpy.where(recordings.level < thresh)[0]] = sig.data
     filt = slab.Filter.equalizing_filterbank(sig, recordings)
-    # rename old filter file, if it exists, by appending current date
+    if plot:  # plot signal, recording and filter for each speaker
+        for i, row in enumerate(_speaker_table):
+
+            # rename old filter file, if it exists, by appending current date
     if _calibration_file.exists():
         date = datetime.datetime.now().strftime("time: %Y-%m-%d-%H-%M-%S")
         rename_previous = _calibration_file.parent / \

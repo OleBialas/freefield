@@ -445,7 +445,7 @@ def equalize_speakers(thresh=75, show_plot=False, test_filt=True):
         if show_plot:
             plt.show()
         fig.savefig(_location.parent/Path("log/speaker_%s_equalizing_"
-                                          "filter.png" % (row[0])), dpi=1200)
+                                          "filter.pdf" % (row[0])), dpi=1200)
         plt.close()
     printv('Calibration completed.')
     if test_filt:

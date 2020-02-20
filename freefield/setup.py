@@ -419,18 +419,16 @@ def equalize_speakers(thresh=75, show_plot=False, test_filt=True):
         fig, ax = plt.subplots(2, 2, figsize=(16., 8.))
         fig.suptitle("Equalization Speaker Nr. %s at Azimuth: %s and"
                      "Elevation: %s" % (i+1, row[3], row[4]))
-        sig.spectrum(axes=ax[0, 0], label="played_signal",
+        sig.spectrum(axes=ax[0, 0], label="played",
                      c="blue", alpha=0.6)
         rec.spectrum(axes=ax[0, 0], channel=i, alpha=0.6,
-                     label="recorded signal", c="red")
+                     label="recorded", c="red")
         ax[0, 0].semilogx(freqs[1:-1], amp_diffs[:, i], c="black",
-                          label="amplitude diff.", linestyle="dashed")
+                          label="difference", linestyle="dashed")
         ax[0, 0].axhline(y=0, linestyle="--", color="black", linewidth=0.5)
         ax[0, 0].legend()
-        ax[0, 1].plot(sig.times*1000, sig.data, alpha=0.6, c="blue",
-                      label="played_signal")
-        ax[0, 1].plot(rec.times*1000, rec.data[:, i], alpha=0.6, c="red",
-                      label="recorded_signal")
+        ax[0, 1].plot(sig.times*1000, sig.data, alpha=0.6, c="blue")
+        ax[0, 1].plot(rec.times*1000, rec.data[:, i], alpha=0.6, c="red")
         ax[0, 1].set_title("Time Course")
         ax[0, 1].set_ylabel("Amplitude in Volts")
         w, h = filt.tf(channels=i, plot=False)
@@ -450,15 +448,11 @@ def equalize_speakers(thresh=75, show_plot=False, test_filt=True):
     printv('Calibration completed.')
     if test_filt:
         printv('Testing the calibration...')
-        test_equalizing_filter()
+        test_equalizing_filter(sig, rec, show_plot)
 
 
-def test_equalizing_filter(sig, old_rec):
-    if not _isinit:
-        initialize_devices(RP2_file=_location.parent/"rcx"/"rec_buf.rcx",
-                           RX8_file=_location.parent/"rcx"/"play_buf.rcx",
-                           connection='GB')
-    sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
+def test_equalizing_filter(sig, old_rec, show_plot):
+
     filt = slab.Filter.load(_calibration_file)
     sig_filt = filt.apply(sig)
     set_variable(variable="playbuflen", value=sig_filt.nsamples, proc="RX8s")
@@ -485,35 +479,25 @@ def test_equalizing_filter(sig, old_rec):
     rec = slab.Sound(rec)
     # plot played and recorded signals:
     for i, row in enumerate(_speaker_table):
-        fig, ax = plt.subplots(1, 2, figsize=(16., 8.))
-        fig.suptitle("Equalization Test of Speaker Nr. %s at Azimuth: %s and"
-                     "Elevation: %s" % (i+1, row[3], row[4]))
-        sig.spectrum(axes=ax[0, 0], c="blue", alpha=0.3, label="original ")
-        sig_filt.channel(i).spectrum(axes=ax[0, 0], c="blue", alpha=0.6)
-
-        rec.spectrum(axes=ax[0, 0], channel=i, alpha=0.6,
-                     label="recorded signal", c="red")
-        ax[0, 0].semilogx(freqs[1:-1], amp_diffs[:, i], c="black",
-                          label="amplitude diff.", linestyle="dashed")
-        ax[0, 0].axhline(y=0, linestyle="--", color="black", linewidth=0.5)
+        fig, ax = plt.subplots(2, 2, figsize=(16., 8.),
+                               sharex="col", sharey="col")
+        fig.suptitle("Speaker Nr. %s at Azimuth: %s and Elevation: %s"
+                     "\n Before and After Equalization"
+                     % (i+1, row[3], row[4]))
+        sig.spectrum(axes=ax[0, 0], c="blue", alpha=0.3, label="played")
+        old_rec.channel(i).spectrum(axes=ax[0, 0], alpha=0.6,
+                                    label="recorded", c="red")
         ax[0, 0].legend()
-        ax[0, 1].plot(sig.times*1000, sig.data, alpha=0.6, c="blue",
-                      label="played_signal")
-        ax[0, 1].plot(rec.times*1000, rec.data[:, i], alpha=0.6, c="red",
-                      label="recorded_signal")
-        ax[0, 1].set_title("Time Course")
-        ax[0, 1].set_ylabel("Amplitude in Volts")
-        w, h = filt.tf(channels=i, plot=False)
-        ax[1, 0].semilogx(w, h, c="black")
-        ax[1, 0].set_title("Equalization Filter Transfer Function")
-        ax[1, 0].set_xlabel("Frequency in Hz")
-        ax[1, 0].set_ylabel("Magnitude in Decibels")
-        ax[1, 1].plot(filt.times, filt.data[:, i], c="black")
-        ax[1, 1].set_title("Equalization Filter Impulse Response")
-        ax[1, 1].set_xlabel("Time in Milliseconds")
-        ax[1, 1].set_ylabel("Amplitude")
+        ax[0, 1].plot(sig.times*1000, sig.data, alpha=0.6, c="blue")
+        ax[0, 1].plot(rec.times*1000, rec.data[:, i], alpha=0.6, c="red")
+        sig_filt.channel(i).spectrum(axes=ax[1, 0], c="blue", alpha=0.6)
+        rec.channel(i).spectrum(axes=ax[1, 0], alpha=0.6, c="red")
+        ax[1, 1].plot(sig.times*1000, sig_filt.channel(i).data,
+                      alpha=0.6, c="blue")
+        ax[1, 1].plot(rec.times*1000, rec.channel(i).data, alpha=0.6, c="red")
         if show_plot:
             plt.show()
-        fig.savefig(_location.parent/Path("log/speaker_%s_equalizing_"
-                                          "filter.png" % (row[0])), dpi=1200)
+        fig.savefig(_location.parent/Path("log/speaker_%s_before_and_after_"
+                                          "equalizing_filter.png" % (row[0])),
+                    dpi=1200)
         plt.close()

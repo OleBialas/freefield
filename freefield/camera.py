@@ -8,6 +8,9 @@ from freefield import setup
 import multiprocessing
 import slab
 import time
+import matplotlib
+import scipy
+from matplotlib import pyplot as plt
 
 # define internal variables
 _location = Path(__file__).resolve().parents[0]
@@ -17,7 +20,10 @@ _predictor = dlib.shape_predictor(
     str(_location/Path("shape_predictor_68_face_landmarks.dat")))
 _mtx = None  # _camera matrix
 _dist = None  # distortion coefficients
-_cam_list = None
+_cams = None
+_ele_reg = None  # regression coefficients for camera vs target coordinates ...
+_azi_reg = None  # ...for elevation and azimuth respectively
+_cam_type = None
 _system = None
 _pool = None
 _calibration = None
@@ -46,20 +52,53 @@ _reprojectsrc = numpy.float32([[10.0, 10.0, 10.0],
                                [-10.0, -10.0, 10.0]])
 
 
-def init(multiprocess=False):
-    global _cam_list, _system, _pool
-    _system = PySpin.System.GetInstance()  # get reference to system object
-    _cam_list = _system.GetCameras()    # get list of _cameras from the system
-    # initializing the _camera:
-    num_cameras = _cam_list.GetSize()
-    if num_cameras == 0:    # Finish if there are no cameras
-        _cam_list.Clear()  # Clear camera list before releasing system
-        _system.ReleaseInstance()  # Release system instance
-        raise ValueError('No camera found!')
+def init(multiprocess=False, type="freefield"):
+    global _cams, _system, _pool, _cam_type
+    _cam_type = type.lower()
+    if _cam_type == "freefield":  # Use FLIR cameras
+        _system = PySpin.System.GetInstance()  # get reference to system object
+        _cams = _system.GetCameras()   # get list of _cameras from the system
+        # initializing the _camera:
+        num_cameras = _cams.GetSize()
+        if num_cameras == 0:    # Finish if there are no cameras
+            _cams.Clear()  # Clear camera list before releasing system
+            _system.ReleaseInstance()  # Release system instance
+            raise ValueError('No camera found!')
+        else:
+            for cam in _cams:
+                cam.Init()  # Initialize camera
+                node_acquisition_mode = PySpin.CEnumerationPtr(
+                    cam.GetNodeMap().GetNode('AcquisitionMode'))
+                if (not PySpin.IsAvailable(node_acquisition_mode) or
+                        not PySpin.IsWritable(node_acquisition_mode)):
+                    raise ValueError(
+                        'Unable to set acquisition to continuous, aborting...')
+                node_acquisition_mode_continuous = \
+                    node_acquisition_mode.GetEntryByName('Continuous')
+                if (not PySpin.IsAvailable(node_acquisition_mode_continuous) or
+                        not PySpin.IsReadable(
+                        node_acquisition_mode_continuous)):
+                    raise ValueError(
+                        'Unable to set acquisition to continuous, aborting...')
+                acquisition_mode_continuous = \
+                    node_acquisition_mode_continuous.GetValue()
+                node_acquisition_mode.SetIntValue(acquisition_mode_continuous)
+                cam.BeginAcquisition()
+
+            setup.printv("initialized %s FLIR camera(s)" % (len(_cams)))
+    elif _cam_type == "web":
+        _cams = []
+        stop = False
+        i = 0
+        while stop is False:
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                _cams.append(cap)
+            else:
+                stop = True
+        setup.printv("initialized %s webcams(s)" % (len(_cams)))
     else:
-        for cam in _cam_list:
-            cam.Init()  # Initialize camera
-        setup.printv("initialized %s camera(s)" % (len(_cam_list)))
+        raise ValueError("type must be either 'freefield' or 'web'")
 
     if multiprocess:
         n_cores = multiprocessing.cpu_count()
@@ -67,90 +106,62 @@ def init(multiprocess=False):
         setup.printv("using multiprocessing with %s cores" % (n_cores))
 
 
-def _acquire_images(n=1):
+def acquire_image(cam_idx=0):
     """
-    Acquire n images from each active camera. The images are returned as arrays
-    in list of list of shape m x n where
-    m is the number of cameras and n is the number of trials
+    acquire an image from a camera. The camera at the index given by cam
+    idx in the camera list _cams is used. If only one camera is being used
+    the default cam_idx=0 is sufficient.
     """
-    global _cam_list
-    if _cam_list is None:
+    cam = _cams[cam_idx]
+    if _cam_type is None:
         raise ValueError("Cameras must be initialized before acquisition")
-    else:
-        all_images = []
-        for cam in _cam_list:
-            node_acquisition_mode = PySpin.CEnumerationPtr(
-                cam.GetNodeMap().GetNode('AcquisitionMode'))
-            if (not PySpin.IsAvailable(node_acquisition_mode) or
-                    not PySpin.IsWritable(node_acquisition_mode)):
-                raise ValueError(
-                    'Unable to set acquisition to continuous, aborting...')
-            node_acquisition_mode_continuous = \
-                node_acquisition_mode.GetEntryByName('Continuous')
-            if (not PySpin.IsAvailable(node_acquisition_mode_continuous) or
-                    not PySpin.IsReadable(node_acquisition_mode_continuous)):
-                raise ValueError(
-                    'Unable to set acquisition to continuous, aborting...')
-            acquisition_mode_continuous = \
-                node_acquisition_mode_continuous.GetValue()
-            node_acquisition_mode.SetIntValue(acquisition_mode_continuous)
-            cam.BeginAcquisition()
-            images = []
-            for i in range(n):
-                image_result = cam.GetNextImage()
-                if image_result.IsIncomplete():
-                    raise ValueError('Image incomplete: image status %d ...'
-                                     % image_result.GetImageStatus())
-                image_converted = image_result.Convert(
-                    PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
-                image_result.Release()
-                images.append(image_converted.GetNDArray())
-            cam.EndAcquisition()
-            all_images.append(images)
-        return all_images
+    elif _cam_type == "freefield":
+        image_result = cam.GetNextImage()
+        if image_result.IsIncomplete():
+            raise ValueError('Image incomplete: image status %d ...'
+                             % image_result.GetImageStatus())
+        image = image_result.Convert(
+            PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
+        image = image.GetNDArray()
+        image_result.Release()
+    elif _cam_type == "web":
+        # The webcam takes several pictures and reading only advances
+        # the buffer one step at a time, thus grab all images and only
+        # retrieve the latest one
+        for i in range(cv2.CAP_PROP_FRAME_COUNT):
+            cam.grab()
+        ret, image = cam.retrieve()
+        if ret is False:
+            setup.printv("could not acquire image, returning None...")
+    return image
 
 
-def deinit():
-    global _cam_list
-    for cam in _cam_list:
-        cam.DeInit()
-        del cam
-    _cam_list.Clear()
-    _system.ReleaseInstance()
-    setup.printv("Deinitializing _camera...")
-
-
-def get_headpose(n=4):
+def get_headpose(cam_idx=0, convert_coordinates=False, n_average=1):
     """
-    Take n images, estimate the headpose from each image and return the
-    average result. returns 3xn array where n is the number of cameras attached
-    to the system.
+    Acquire n images and compute headpose (elevation and azimuth). If
+    convert_coordinates is True use the regression coefficients to convert
+    the camera into world coordinates
     """
-    images = _acquire_images(n)  # take images
-    headpose = []
-    for cam_nr in range(_cam_list.GetSize()):
-        tmp = numpy.zeros([n, 3])
-        for i in range(n):
-            tmp[i] = _get_pose_from_image(images[cam_nr][i])
-        headpose.append(tmp)
-    avg = numpy.zeros([_cam_list.GetSize(), 3])
-    std = numpy.zeros([_cam_list.GetSize(), 3])
-    for i, h in enumerate(headpose):
-        avg[i] = h.mean(axis=0)
-        std[i] = h.std(axis=0)
-    return avg, std
+    elevation, azimuth = 0, 0
+    for i in range(n_average):
+        image = acquire_image(cam_idx)  # take images
+        ele, azi, _ = pose_from_image(image)
+        elevation += ele
+        azimuth += azi
+    elevation /= n_average
+    azimuth /= n_average
+    if convert_coordinates:  # y= b * x +c
+        elevation = _ele_reg[0] * elevation + _ele_reg[0]
+        azimuth = _azi_reg[0] * azimuth + _azi_reg[0]
+    return azimuth, elevation
 
 
-def plot_headpose():
+def plot_pose(image, euler_angle, shape, rotation_vec, translation_vec,
+              _mtx, _dist, plot_arg="show"):
     """
     Acquire an image, compute the headpose and then plot the acquired image
     with the fitted mask of model points and the computed angles
     """
-    images = _acquire_images(1)  # take one image
-
-    for image in images:
-        euler_angle, shape, rotation_vec, translation_vec, _mtx, _dist = \
-            _get_pose_from_image(image[0], just_pose=False)
 
     reprojectdst, _ = cv2.projectPoints(_reprojectsrc, rotation_vec,
                                         translation_vec, _mtx, _dist)
@@ -158,23 +169,34 @@ def plot_headpose():
 
     for (x, y) in shape:
         cv2.circle(image, (x, y), 1, (0, 0, 255), -1)
-        cv2.putText(image, "X: " + "{:7.2f}".format(euler_angle[0, 0]),
-                    (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
+        cv2.putText(image, "Elevation: " + "{:7.2f}".format(euler_angle[0, 0]),
+                    (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0),
                     thickness=2)
-        cv2.putText(image, "Y: " + "{:7.2f}".format(euler_angle[1, 0]),
-                    (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
+        cv2.putText(image, "Azimuth: " + "{:7.2f}".format(euler_angle[1, 0]),
+                    (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0),
                     thickness=2)
-        cv2.putText(image, "Z: " + "{:7.2f}".format(euler_angle[2, 0]),
-                    (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
+        cv2.putText(image, "Tilt: " + "{:7.2f}".format(euler_angle[2, 0]),
+                    (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0),
                     thickness=2)
-        cv2.imshow("Head Pose", image)
-    cv2.waitKey(0)
+    if plot_arg == "show":
+        matplotlib.pyplot.imshow(image, cmap="gray")
+        matplotlib.pyplot.show()
+    elif isinstance(plot_arg, matplotlib.axes._subplots.Axes):
+        plot_arg.imshow(image, cmap="gray")
+    elif isinstance(plot_arg, str):
+        matplotlib.pyplot.imshow(image, cmap="gray")
+        path = _location.parent/Path("log/"+plot_arg)
+        matplotlib.pyplot.savefig(path, dip=1200, format="pdf")
+    else:
+        raise ValueError("plot_arg must be either 'show' (show the image), an "
+                         "instance of matplotlib.axes (plot to that axes) or "
+                         "a string (save to log folder as pdf with that name)")
 
 
-def _get_pose_from_image(image, just_pose=True):
+def pose_from_image(image, only_euler=True):
     """
     Compute the head pose from an image, which must be a 2d (grayscale) or
-    3d (color) numpy array. If just_pose=True (default), only angles azimuth,
+    3d (color) numpy array. If only_euler=True (default), only angles azimuth,
     elevation and tilt are returned. If False also face shape, rotation vector,
     translation vector, camera matrix , and distortion are returned. This is
     nesseccary to plot the image with the computed headpose.
@@ -196,7 +218,10 @@ def _get_pose_from_image(image, just_pose=True):
     face_rects = _detector(image, 0)
     if not face_rects:
         setup.printv("Could not recognize a face in the image, returning none")
-        return None, None, None
+        if only_euler:
+            return None, None, None
+        else:
+            return None, None, None, None, None, None
     shape = _predictor(image, face_rects[0])
     shape = face_utils.shape_to_np(shape)
     image_pts = numpy.float32([shape[17], shape[21], shape[22], shape[26],
@@ -210,32 +235,85 @@ def _get_pose_from_image(image, just_pose=True):
     rotation_mat, _ = cv2.Rodrigues(rotation_vec)
     pose_mat = cv2.hconcat((rotation_mat, translation_vec))
     _, _, _, _, _, _, euler_angle = cv2.decomposeProjectionMatrix(pose_mat)
-    if just_pose:
-        return euler_angle[0, 0], euler_angle[1, 0], euler_angle[2, 0]  # x,y,z
+    if only_euler:
+        # elevation, azimuth and tilt
+        return euler_angle[0, 0], euler_angle[1, 0], euler_angle[2, 0]
     else:
         return euler_angle, shape, rotation_vec, translation_vec, _mtx, _dist
 
 
-def calibrate_camera(positions, speaker_config="dome"):
+def calibrate_webcam(targets, n_repeat=1):
+    """
+    Calibration of the camera for webcams: find the coefficients for the
+    regression between the camera and world coordinates. You will be asked
+    to point your head towards the target positions in randomized order and
+    press enter.
+    Attributes:
+    target_positions (list of tuples): elevation and azimuth for any number of
+        points in world coordinates
+    n_repeat (int): number of repetitions for each target (default = 1)
+    """
+    targets_camera = []
+    targets_world = []
+    if not _cam_type == "web":
+        raise ValueError("This functions is for calibrating webcams only!")
+    seq = slab.psychoacoustics.Trialsequence(
+        name="camera calibration", n_reps=n_repeat,
+        conditions=range(len(targets)))
+    while seq.n_remaining:
+        pos = targets[seq.__next__()]
+        input("point your head towards the target at elevation: %s and "
+              "azimuth %s. \n Then press enter to take an image an get "
+              "the headpose" % (pos[0], pos[1]))
+        image = acquire_image(0)
+        ele, azi, _ = pose_from_image(image)
+        if ele is not None and azi is not None:
+            targets_camera.append((ele, azi))
+            targets_world.append(pos)
+    camera_to_world(targets_world, targets_camera)
+    return targets_world, targets_camera
+
+
+def camera_to_world(world_coordinates, camera_coordinates, plot=True):
+
+    global _ele_reg, _azi_reg
+    if plot:
+        fig, ax = plt.subplots(2)
+        fig.suptitle("World vs Camera Coordinates")
+    for i, angle in enumerate(["elevation", "azimuth"]):
+        x = numpy.array([w[i] for w in world_coordinates])
+        y = numpy.array([c[i] for c in camera_coordinates])
+        slope, intercept, r, _, _ = scipy.stats.linregress(x, y)
+        if angle == "elevation":
+            _ele_reg = (slope, intercept)
+        elif angle == "azimuth":
+            _azi_reg = (slope, intercept)
+        if plot:
+            ax[i].scatter(x, y, c="black")
+            ax[i].plot(x, x*slope+intercept, c="black", linestyle="--")
+            ax[i].set_title(angle)
+            ax[i].set_xlabel("world coordinates in degree")
+            ax[i].set_ylabel("camera coordinates in degree")
+    if plot:
+        plt.show()
+
+
+def calibrate_freefieldcam(targets, repetitions):
     """"
     Makes LEDs light up at the given postions. Subject has to align their head
     with the lit LED and push the button so a picture is taken and the head
     pose is determined. Then we can determine the coefficients of the linear
     regression for led position vs measured head position
     """
-    from sklearn.linear_model import LinearRegression
-    linear_regressor = LinearRegression()
-    from matplotlib import pyplot as plt
     rp2_file = _location.parents[0] / Path("rcx/button_response.rcx")
     rx8_file = _location.parents[0] / Path("rcx/leds.rcx")
-    setup.set_speaker_config(speaker_config)
     setup.initialize_devices(RX8_file=rx8_file, RP2_file=rp2_file,
                              ZBus=True, cam=True)
     leds = setup.all_leds()
     seq = slab.psychoacoustics.Trialsequence(
         name="camera calibration", n_reps=4, conditions=range(len(leds)))
     results = \
-        [numpy.zeros([seq.n_trials, 4]) for i in range(_cam_list.GetSize())]
+        [numpy.zeros([seq.n_trials, 4]) for i in range(_cams.GetSize())]
     while not seq.finished:
         row = leds[seq.__next__()]
         setup.printv("trial nr %s: speaker at azi: %s and ele: of %s" %
@@ -253,7 +331,7 @@ def calibrate_camera(positions, speaker_config="dome"):
         results[i] = results[i][~numpy.isnan(results[i]).any(axis=1)]
 
     # Now fit regression to data and plot results:
-    fig, ax = plt.subplots(_cam_list.GetSize(), sharex=True, sharey=True)
+    fig, ax = plt.subplots(_cams.GetSize(), sharex=True, sharey=True)
     fig.suptitle("Horizontal")
     for i, r in enumerate(results):
         r = r[~numpy.isnan(r).any(axis=1)]
@@ -262,7 +340,7 @@ def calibrate_camera(positions, speaker_config="dome"):
         ax[i].scatter(r[:, 0], r[:, 2])
         ax[i].plot(r[:, 0], pred[:, 0])
 
-    fig, ax = plt.subplots(_cam_list.GetSize(), sharex=True, sharey=True)
+    fig, ax = plt.subplots(_cams.GetSize(), sharex=True, sharey=True)
     fig.suptitle("Vertical")
     for i, r in enumerate(results):
         r = r[~numpy.isnan(r).any(axis=1)]
@@ -272,3 +350,18 @@ def calibrate_camera(positions, speaker_config="dome"):
         ax[i].plot(r[:, 1], pred[:, 0])
 
     return results, linear_regressor
+
+
+def deinit():
+    global _cams
+    if _cam_type == "freefield":
+        for cam in _cams:
+            cam.EndAcquisition()
+            cam.DeInit()
+            del cam
+        _cams.Clear()
+        _system.ReleaseInstance()
+    if _cam_type == "web":
+        for cam in _cams:
+            cam.release()
+    setup.printv("Deinitializing _camera...")

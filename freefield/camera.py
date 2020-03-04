@@ -1,5 +1,4 @@
-import numpy  # for some reason numpy must be imported before PySpin
-import PySpin
+import numpy
 import cv2
 import dlib
 from imutils import face_utils
@@ -55,7 +54,9 @@ _reprojectsrc = numpy.float32([[10.0, 10.0, 10.0],
 def init(multiprocess=False, type="freefield"):
     global _cams, _system, _pool, _cam_type
     _cam_type = type.lower()
-    if _cam_type == "freefield":  # Use FLIR cameras
+    if _cam_type == "freefield":
+        import PySpin  # for some reason numpy must be imported before PySpin
+        # Use FLIR cameras
         _system = PySpin.System.GetInstance()  # get reference to system object
         _cams = _system.GetCameras()   # get list of _cameras from the system
         # initializing the _camera:

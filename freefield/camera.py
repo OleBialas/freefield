@@ -18,11 +18,10 @@ _detector = dlib.get_frontal_face_detector()
 # check if this file exists, if not download it:
 _predictor = dlib.shape_predictor(
     str(_location/Path("shape_predictor_68_face_landmarks.dat")))
-_mtx = None  # _camera matrix
-_dist = None  # distortion coefficients
-_cams = None
-_ele_reg = None  # regression coefficients for camera vs target coordinates ...
-_azi_reg = None  # ...for elevation and azimuth respectively
+# regression coefficients for camera vs target coordinates for azimuth and
+# elevation. Tuple with (slope, intercept) for each camera
+_ele_reg = []
+_azi_reg = []
 _cam_type = None
 _system = None
 _pool = None
@@ -170,44 +169,7 @@ def get_headpose(cams="all", convert_coordinates=False, n_average=1):
     return azimuth, elevation
 
 
-def plot_pose(image, euler_angle, shape, rotation_vec, translation_vec,
-              _mtx, _dist, plot_arg="show"):
-    """
-    Acquire an image, compute the headpose and then plot the acquired image
-    with the fitted mask of model points and the computed angles
-    """
-
-    reprojectdst, _ = cv2.projectPoints(_reprojectsrc, rotation_vec,
-                                        translation_vec, _mtx, _dist)
-    reprojectdst = tuple(map(tuple, reprojectdst.reshape(8, 2)))
-
-    for (x, y) in shape:
-        cv2.circle(image, (x, y), 1, (0, 0, 255), -1)
-        cv2.putText(image, "Elevation: " + "{:7.2f}".format(euler_angle[0, 0]),
-                    (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0),
-                    thickness=2)
-        cv2.putText(image, "Azimuth: " + "{:7.2f}".format(euler_angle[1, 0]),
-                    (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0),
-                    thickness=2)
-        cv2.putText(image, "Tilt: " + "{:7.2f}".format(euler_angle[2, 0]),
-                    (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0),
-                    thickness=2)
-    if plot_arg == "show":
-        matplotlib.pyplot.imshow(image, cmap="gray")
-        matplotlib.pyplot.show()
-    elif isinstance(plot_arg, matplotlib.axes._subplots.Axes):
-        plot_arg.imshow(image, cmap="gray")
-    elif isinstance(plot_arg, str):
-        matplotlib.pyplot.imshow(image, cmap="gray")
-        path = _location.parent/Path("log/"+plot_arg)
-        matplotlib.pyplot.savefig(path, dip=1200, format="pdf")
-    else:
-        raise ValueError("plot_arg must be either 'show' (show the image), an "
-                         "instance of matplotlib.axes (plot to that axes) or "
-                         "a string (save to log folder as pdf with that name)")
-
-
-def pose_from_image(image, only_euler=True):
+def pose_from_image(image, only_euler=True, plot_arg=None):
     """
     Compute the head pose from an image, which must be a 2d (grayscale) or
     3d (color) numpy array. If only_euler=True (default), only angles azimuth,
@@ -215,18 +177,14 @@ def pose_from_image(image, only_euler=True):
     translation vector, camera matrix , and distortion are returned. This is
     nesseccary to plot the image with the computed headpose.
     """
-    global _mtx, _dist
-    if not numpy.sum(_mtx):
-        size = image.shape
-        focal_length = size[1]
-        center = (size[1]/2, size[0]/2)
-        _mtx = numpy.array(
-            [[focal_length, 0, center[0]],
-             [0, focal_length, center[1]],
-             [0, 0, 1]], dtype="double"
-        )
-    if not numpy.sum(_dist):
-        _dist = numpy.zeros((4, 1))  # assuming no lens distortion
+    # approximate camera matrix:
+    focal_length = image.shape[1]
+    center = (image.shape[1]/2, image.shape[0]/2)
+    mtx = numpy.array(
+        [[focal_length, 0, center[0]],
+         [0, focal_length, center[1]],
+         [0, 0, 1]], dtype="double")
+    dist = numpy.zeros((4, 1))  # assuming no lens distortion
 
     # Get corresponding 2D points in the image:
     face_rects = _detector(image, 0)
@@ -244,16 +202,44 @@ def pose_from_image(image, only_euler=True):
                                shape[57], shape[8]])
     # estimate the translation and rotation coefficients:
     success, rotation_vec, translation_vec = \
-        cv2.solvePnP(_object_pts, image_pts, _mtx, _dist)
+        cv2.solvePnP(_object_pts, image_pts, mtx, dist)
     # get the angles out of the transformation matrix:
     rotation_mat, _ = cv2.Rodrigues(rotation_vec)
     pose_mat = cv2.hconcat((rotation_mat, translation_vec))
-    _, _, _, _, _, _, euler_angle = cv2.decomposeProjectionMatrix(pose_mat)
-    if only_euler:
+    _, _, _, _, _, _, angles = cv2.decomposeProjectionMatrix(pose_mat)
+    if plot_arg is None:
         # elevation, azimuth and tilt
-        return euler_angle[0, 0], euler_angle[1, 0], euler_angle[2, 0]
+        return angles[0, 0], angles[1, 0], angles[2, 0]
     else:
-        return euler_angle, shape, rotation_vec, translation_vec, _mtx, _dist
+        reprojectdst, _ = cv2.projectPoints(_reprojectsrc, rotation_vec,
+                                            translation_vec, mtx, dist)
+        reprojectdst = tuple(map(tuple, reprojectdst.reshape(8, 2)))
+
+        for (x, y) in shape:
+            cv2.circle(image, (x, y), 1, (0, 0, 255), -1)
+            cv2.putText(image, "Elevation: " + "{:7.2f}".format(angles[0, 0]),
+                        (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0),
+                        thickness=2)
+            cv2.putText(image, "Azimuth: " + "{:7.2f}".format(angles[1, 0]),
+                        (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0),
+                        thickness=2)
+            cv2.putText(image, "Tilt: " + "{:7.2f}".format(angles[2, 0]),
+                        (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0),
+                        thickness=2)
+        if plot_arg == "show":
+            matplotlib.pyplot.imshow(image, cmap="gray")
+            matplotlib.pyplot.show()
+        elif isinstance(plot_arg, matplotlib.axes._subplots.Axes):
+            plot_arg.imshow(image, cmap="gray")
+        elif isinstance(plot_arg, str):
+            matplotlib.pyplot.imshow(image, cmap="gray")
+            path = _location.parent/Path("log/"+plot_arg)
+            matplotlib.pyplot.savefig(path, dip=1200, format="pdf")
+        else:
+            raise ValueError(
+                "plot_arg must be either 'show' (show the image), an "
+                "instance of matplotlib.axes (plot to that axes) or "
+                "a string (save to log folder as pdf with that name)")
 
 
 def calibrate_camera(target_positions=None, n_repeat=1):
@@ -312,8 +298,9 @@ def calibrate_camera(target_positions=None, n_repeat=1):
             setup.set_variable(variable="bitmask", value=bitval, proc=proc)
             while not setup.get_variable(variable="response", proc="RP2"):
                 time.sleep(0.1)  # wait untill button is pressed
-        image = acquire_image(0)
-        ele, azi, _ = pose_from_image(image)
+        images = acquire_image(0)  # get list containing image(s)
+        for image in images:
+            ele, azi, _ = pose_from_image(image)
         if ele is not None and azi is not None:
             camera_coordinates.append((ele, azi))
             world_coordinates.append(pos)

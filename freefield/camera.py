@@ -151,25 +151,27 @@ def get_headpose(cams="all", convert_coordinates=False, n_average=1):
     convert_coordinates is True use the regression coefficients to convert
     the camera into world coordinates
     """
-    elevation, azimuth = 0, 0
+    ele, azi = [0 for i in range(len(_cams))], [0 for i in range(len(_cams))]
     for i in range(n_average):
-        image = acquire_image(cam_idx)  # take images
-        ele, azi, _ = pose_from_image(image)
-        elevation += ele
-        azimuth += azi
-    elevation /= n_average
-    azimuth /= n_average
+        images = acquire_image(cams)  # take images
+        for i, image in enumerate(images):
+            e, a, _ = pose_from_image(image)
+        ele += e
+        azi += a
+    ele /= n_average
+    azi /= n_average
     if convert_coordinates:  # y= b * x +c
-        if _ele_reg is None or _azi_reg is None:
+        if len(_ele_reg) == 0 or len(_azi_reg) == 0:
             raise ValueError(
                 "You have to do a calibration before you can convert "
                 "the headpose estimate to world coordinates!")
-        elevation = _ele_reg[0] * elevation + _ele_reg[0]
-        azimuth = _azi_reg[0] * azimuth + _azi_reg[0]
-    return azimuth, elevation
+        for i in range(len(_cams)):
+            ele[i] = round((_ele_reg[i][0] * ele[i] + _ele_reg[i][0]), 2)
+            azi[i] = round((_azi_reg[i][0] * azi[i] + _azi_reg[i][0]), 2)
+    return ele, azi
 
 
-def pose_from_image(image, only_euler=True, plot_arg=None):
+def pose_from_image(image, plot_arg=None):
     """
     Compute the head pose from an image, which must be a 2d (grayscale) or
     3d (color) numpy array. If only_euler=True (default), only angles azimuth,
@@ -190,10 +192,7 @@ def pose_from_image(image, only_euler=True, plot_arg=None):
     face_rects = _detector(image, 0)
     if not face_rects:
         setup.printv("Could not recognize a face in the image, returning none")
-        if only_euler:
-            return None, None, None
-        else:
-            return None, None, None, None, None, None
+        return None, None, None
     shape = _predictor(image, face_rects[0])
     shape = face_utils.shape_to_np(shape)
     image_pts = numpy.float32([shape[17], shape[21], shape[22], shape[26],
@@ -266,8 +265,9 @@ def calibrate_camera(target_positions=None, n_repeat=1):
     return: world_coordinates, camera_coordinates (list of tuples)
     """
     # azimuth and elevation of a set of points in camera and world coordinates
-    camera_coordinates = []
-    world_coordinates = []
+    # one list for each camera
+    camera_coordinates = [[] for i in range(len(_cams))]
+    world_coordinates = [[] for i in range(len(_cams))]
     if _cam_type == "web" and target_positions is None:
         raise ValueError("Define target positions for calibrating webcam!")
     elif _cam_type is None:
@@ -298,12 +298,12 @@ def calibrate_camera(target_positions=None, n_repeat=1):
             setup.set_variable(variable="bitmask", value=bitval, proc=proc)
             while not setup.get_variable(variable="response", proc="RP2"):
                 time.sleep(0.1)  # wait untill button is pressed
-        images = acquire_image(0)  # get list containing image(s)
-        for image in images:
+        images = acquire_image(cams="all")  # get list containing image(s)
+        for i, image in enumerate(images):
             ele, azi, _ = pose_from_image(image)
         if ele is not None and azi is not None:
-            camera_coordinates.append((ele, azi))
-            world_coordinates.append(pos)
+            camera_coordinates[i].append((ele, azi))
+            world_coordinates[i].append(pos)
     camera_to_world(world_coordinates, camera_coordinates)
     return world_coordinates, camera_coordinates
 
@@ -314,25 +314,26 @@ def camera_to_world(world_coordinates, camera_coordinates, plot=True):
     them in global variables
     """
     global _ele_reg, _azi_reg
-    if plot:
-        fig, ax = plt.subplots(2)
-        fig.suptitle("World vs Camera Coordinates")
-    for i, angle in enumerate(["elevation", "azimuth"]):
-        x = numpy.array([w[i] for w in world_coordinates])
-        y = numpy.array([c[i] for c in camera_coordinates])
-        slope, intercept, r, _, _ = scipy.stats.linregress(x, y)
-        if angle == "elevation":
-            _ele_reg = (slope, intercept)
-        elif angle == "azimuth":
-            _azi_reg = (slope, intercept)
+    for w_c, c_c in zip(world_coordinates, camera_coordinates):
         if plot:
-            ax[i].scatter(x, y, c="black")
-            ax[i].plot(x, x*slope+intercept, c="black", linestyle="--")
-            ax[i].set_title(angle)
-            ax[i].set_xlabel("world coordinates in degree")
-            ax[i].set_ylabel("camera coordinates in degree")
-    if plot:
-        plt.show()
+            fig, ax = plt.subplots(2)
+            fig.suptitle("World vs Camera Coordinates")
+        for i, angle in enumerate(["elevation", "azimuth"]):
+            x = numpy.array([w[i] for w in w_c])
+            y = numpy.array([c[i] for c in c_c])
+            slope, intercept, r, _, _ = scipy.stats.linregress(x, y)
+            if angle == "elevation":
+                _ele_reg.append((slope, intercept))
+            elif angle == "azimuth":
+                _azi_reg.append((slope, intercept))
+            if plot:
+                ax[i].scatter(x, y, c="black")
+                ax[i].plot(x, x*slope+intercept, c="black", linestyle="--")
+                ax[i].set_title(angle)
+                ax[i].set_xlabel("world coordinates in degree")
+                ax[i].set_ylabel("camera coordinates in degree")
+        if plot:
+            plt.show()
 
 
 def deinit():

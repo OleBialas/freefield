@@ -67,24 +67,6 @@ def init(multiprocess=False, type="freefield"):
         else:
             for cam in _cams:
                 cam.Init()  # Initialize camera
-                node_acquisition_mode = PySpin.CEnumerationPtr(
-                    cam.GetNodeMap().GetNode('AcquisitionMode'))
-                if (not PySpin.IsAvailable(node_acquisition_mode) or
-                        not PySpin.IsWritable(node_acquisition_mode)):
-                    raise ValueError(
-                        'Unable to set acquisition to continuous, aborting...')
-                node_acquisition_mode_continuous = \
-                    node_acquisition_mode.GetEntryByName('Continuous')
-                if (not PySpin.IsAvailable(node_acquisition_mode_continuous) or
-                        not PySpin.IsReadable(
-                        node_acquisition_mode_continuous)):
-                    raise ValueError(
-                        'Unable to set acquisition to continuous, aborting...')
-                acquisition_mode_continuous = \
-                    node_acquisition_mode_continuous.GetValue()
-                node_acquisition_mode.SetIntValue(acquisition_mode_continuous)
-                cam.BeginAcquisition()
-
             setup.printv("initialized %s FLIR camera(s)" % (len(_cams)))
     elif _cam_type == "web":
         _cams = []
@@ -116,6 +98,23 @@ def acquire_image(cam_idx=0):
     if _cam_type is None:
         raise ValueError("Cameras must be initialized before acquisition")
     elif _cam_type == "freefield":
+        node_acquisition_mode = PySpin.CEnumerationPtr(
+            cam.GetNodeMap().GetNode('AcquisitionMode'))
+        if (not PySpin.IsAvailable(node_acquisition_mode) or
+                not PySpin.IsWritable(node_acquisition_mode)):
+            raise ValueError(
+                'Unable to set acquisition to continuous, aborting...')
+        node_acquisition_mode_continuous = \
+            node_acquisition_mode.GetEntryByName('Continuous')
+        if (not PySpin.IsAvailable(node_acquisition_mode_continuous) or
+                not PySpin.IsReadable(
+                node_acquisition_mode_continuous)):
+            raise ValueError(
+                'Unable to set acquisition to continuous, aborting...')
+        acquisition_mode_continuous = \
+            node_acquisition_mode_continuous.GetValue()
+        node_acquisition_mode.SetIntValue(acquisition_mode_continuous)
+        cam.BeginAcquisition()
         image_result = cam.GetNextImage()
         if image_result.IsIncomplete():
             raise ValueError('Image incomplete: image status %d ...'
@@ -124,6 +123,8 @@ def acquire_image(cam_idx=0):
             PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
         image = image.GetNDArray()
         image_result.Release()
+        cam.EndAcquisition()
+
     elif _cam_type == "web":
         # The webcam takes several pictures and reading only advances
         # the buffer one step at a time, thus grab all images and only
@@ -217,7 +218,6 @@ def pose_from_image(image, only_euler=True):
         )
     if not numpy.sum(_dist):
         _dist = numpy.zeros((4, 1))  # assuming no lens distortion
-
     # Get corresponding 2D points in the image:
     face_rects = _detector(image, 0)
     if not face_rects:
@@ -283,24 +283,24 @@ def calibrate_camera(target_positions=None, n_repeat=1):
         rp2_file = _location.parents[0] / Path("rcx/button_response.rcx")
         rx8_file = _location.parents[0] / Path("rcx/leds.rcx")
         setup.initialize_devices(RX8_file=rx8_file, RP2_file=rp2_file,
-                                 ZBus=True, cam=True)
+                                 ZBus=True, cam=False)
         leds = setup.all_leds()
         target_positions = [(l[4], l[3]) for l in leds]
     seq = slab.psychoacoustics.Trialsequence(
         name="cam", n_reps=n_repeat, conditions=range(len(target_positions)))
     while seq.n_remaining:
         pos = target_positions[seq.__next__()]
-        world_coordinates.append(pos)
         if _cam_type == "web":  # look at target position and press enter
             input("point your head towards the target at elevation: %s and "
                   "azimuth %s. \n Then press enter to take an image an get "
                   "the headpose" % (pos[0], pos[1]))
         elif _cam_type == "freefield":  # light LED and wait for button press
-            proc, bitval = leds[seq.this_trial][2], leds[seq.this_trial][5]
+            proc, bit = leds[seq.this_trial][6], leds[seq.this_trial][5]
             setup.printv("trial nr %s: speaker at azi: %s and ele: of %s" %
-                         (seq.this_n, pos[1], pos[2]))
-            setup.set_variable(variable="bitmask", value=bitval, proc=proc)
-            while not setup.get_variable(variable="response", proc="RP2"):
+                         (seq.this_n, pos[1], pos[0]))
+            setup.set_variable(variable="bitmask", value=int(bit), proc=proc)
+            while not setup.get_variable(variable="response", proc="RP2",
+                                         supress_print=True):
                 time.sleep(0.1)  # wait untill button is pressed
         image = acquire_image(0)
         ele, azi, _ = pose_from_image(image)
@@ -308,6 +308,8 @@ def calibrate_camera(target_positions=None, n_repeat=1):
             camera_coordinates.append((ele, azi))
             world_coordinates.append(pos)
     camera_to_world(world_coordinates, camera_coordinates)
+    setup.set_variable(variable="bitmask", value=0, proc="RX8s")
+    setup.halt()
     return world_coordinates, camera_coordinates
 
 

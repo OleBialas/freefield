@@ -151,6 +151,10 @@ def get_headpose(cam_idx=0, convert_coordinates=False, n_average=1):
     elevation /= n_average
     azimuth /= n_average
     if convert_coordinates:  # y= b * x +c
+        if _ele_reg is None or _azi_reg is None:
+            raise ValueError(
+                "You have to do a calibration before you can convert "
+                "the headpose estimate to world coordinates!")
         elevation = _ele_reg[0] * elevation + _ele_reg[0]
         azimuth = _azi_reg[0] * azimuth + _azi_reg[0]
     return azimuth, elevation
@@ -242,40 +246,76 @@ def pose_from_image(image, only_euler=True):
         return euler_angle, shape, rotation_vec, translation_vec, _mtx, _dist
 
 
-def calibrate_webcam(targets, n_repeat=1):
+def calibrate_camera(target_positions=None, n_repeat=1):
     """
-    Calibration of the camera for webcams: find the coefficients for the
-    regression between the camera and world coordinates. You will be asked
-    to point your head towards the target positions in randomized order and
-    press enter.
+    Calibrate camera(s) by computing the linear regression for a number of
+    points in camera and world coordinates.
+    If the camera is a webcam you need to give a list of tuples with
+    elevation and azimuth (in that order) of points in your environment.
+    You will be asked to point your head towards the target positions in
+    randomized order and press enter. If the cameras are the FLIR cameras in
+    the freefield the target positions are defined automatically (all speaker
+    positions that have LEDs attached). The LEDs will light up in randomized
+    order. Point your head towards the lit LED, and press the button on
+    the response box. For each position, repeated n times, the headpose will
+    be computed. The regression coefficients (slope and intercept) will be
+    stored in the environment variables _azi_reg and _ele_reg. The coordinates
+    used to compute the regression are also returned (mostly for debugging
+    purposes). # TODO: implement multiple cameras
     Attributes:
     target_positions (list of tuples): elevation and azimuth for any number of
         points in world coordinates
     n_repeat (int): number of repetitions for each target (default = 1)
+
+    return: world_coordinates, camera_coordinates (list of tuples)
     """
-    targets_camera = []
-    targets_world = []
-    if not _cam_type == "web":
-        raise ValueError("This functions is for calibrating webcams only!")
+    # azimuth and elevation of a set of points in camera and world coordinates
+    camera_coordinates = []
+    world_coordinates = []
+    if _cam_type == "web" and target_positions is None:
+        raise ValueError("Define target positions for calibrating webcam!")
+    elif _cam_type is None:
+        raise ValueError("Initialize Camera before calibration!")
+    elif _cam_type == "freefield":  # initialize the setup
+        if target_positions is not None:
+            raise ValueError(
+                "Can't set target positions for freefield calibration!")
+        rp2_file = _location.parents[0] / Path("rcx/button_response.rcx")
+        rx8_file = _location.parents[0] / Path("rcx/leds.rcx")
+        setup.initialize_devices(RX8_file=rx8_file, RP2_file=rp2_file,
+                                 ZBus=True, cam=True)
+        leds = setup.all_leds()
+        target_positions = [(l[4], l[3]) for l in leds]
     seq = slab.psychoacoustics.Trialsequence(
-        name="camera calibration", n_reps=n_repeat,
-        conditions=range(len(targets)))
+        name="cam", n_reps=n_repeat, conditions=range(len(target_positions)))
     while seq.n_remaining:
-        pos = targets[seq.__next__()]
-        input("point your head towards the target at elevation: %s and "
-              "azimuth %s. \n Then press enter to take an image an get "
-              "the headpose" % (pos[0], pos[1]))
+        pos = target_positions[seq.__next__()]
+        world_coordinates.append(pos)
+        if _cam_type == "web":  # look at target position and press enter
+            input("point your head towards the target at elevation: %s and "
+                  "azimuth %s. \n Then press enter to take an image an get "
+                  "the headpose" % (pos[0], pos[1]))
+        elif _cam_type == "freefield":  # light LED and wait for button press
+            proc, bitval = leds[seq.this_trial][2], leds[seq.this_trial][5]
+            setup.printv("trial nr %s: speaker at azi: %s and ele: of %s" %
+                         (seq.this_n, pos[1], pos[2]))
+            setup.set_variable(variable="bitmask", value=bitval, proc=proc)
+            while not setup.get_variable(variable="response", proc="RP2"):
+                time.sleep(0.1)  # wait untill button is pressed
         image = acquire_image(0)
         ele, azi, _ = pose_from_image(image)
         if ele is not None and azi is not None:
-            targets_camera.append((ele, azi))
-            targets_world.append(pos)
-    camera_to_world(targets_world, targets_camera)
-    return targets_world, targets_camera
+            camera_coordinates.append((ele, azi))
+            world_coordinates.append(pos)
+    camera_to_world(world_coordinates, camera_coordinates)
+    return world_coordinates, camera_coordinates
 
 
 def camera_to_world(world_coordinates, camera_coordinates, plot=True):
-
+    """
+    Find linear regression for camera and world coordinates and store
+    them in global variables
+    """
     global _ele_reg, _azi_reg
     if plot:
         fig, ax = plt.subplots(2)
@@ -296,60 +336,6 @@ def camera_to_world(world_coordinates, camera_coordinates, plot=True):
             ax[i].set_ylabel("camera coordinates in degree")
     if plot:
         plt.show()
-
-
-def calibrate_freefieldcam(targets, repetitions):
-    """"
-    Makes LEDs light up at the given postions. Subject has to align their head
-    with the lit LED and push the button so a picture is taken and the head
-    pose is determined. Then we can determine the coefficients of the linear
-    regression for led position vs measured head position
-    """
-    rp2_file = _location.parents[0] / Path("rcx/button_response.rcx")
-    rx8_file = _location.parents[0] / Path("rcx/leds.rcx")
-    setup.initialize_devices(RX8_file=rx8_file, RP2_file=rp2_file,
-                             ZBus=True, cam=True)
-    leds = setup.all_leds()
-    seq = slab.psychoacoustics.Trialsequence(
-        name="camera calibration", n_reps=4, conditions=range(len(leds)))
-    results = \
-        [numpy.zeros([seq.n_trials, 4]) for i in range(_cams.GetSize())]
-    while not seq.finished:
-        row = leds[seq.__next__()]
-        setup.printv("trial nr %s: speaker at azi: %s and ele: of %s" %
-                     (seq.this_n, row[3], row[4]))
-        setup.set_variable(variable="bitmask", value=row[5], proc=int(row[2]))
-        while not setup.get_variable(variable="response", proc="RP2"):
-            time.sleep(0.1)  # wait untill button is pressed
-        headpose, std = get_headpose(n=4)
-        setup.set_variable(variable="bitmask", value=0, proc=int(row[2]))
-        for i, h in enumerate(headpose):
-            results[i][seq.this_n][0:2] = row[3:5]
-            results[i][seq.this_n][2:] = h[0:2].round(2)  # estimated x and y
-
-    # for i in range(len(results)):
-        results[i] = results[i][~numpy.isnan(results[i]).any(axis=1)]
-
-    # Now fit regression to data and plot results:
-    fig, ax = plt.subplots(_cams.GetSize(), sharex=True, sharey=True)
-    fig.suptitle("Horizontal")
-    for i, r in enumerate(results):
-        r = r[~numpy.isnan(r).any(axis=1)]
-        linear_regressor.fit(r[:, 0].reshape(-1, 1), r[:, 2].reshape(-1, 1))
-        pred = linear_regressor.predict(r[:, 0].reshape(-1, 1))
-        ax[i].scatter(r[:, 0], r[:, 2])
-        ax[i].plot(r[:, 0], pred[:, 0])
-
-    fig, ax = plt.subplots(_cams.GetSize(), sharex=True, sharey=True)
-    fig.suptitle("Vertical")
-    for i, r in enumerate(results):
-        r = r[~numpy.isnan(r).any(axis=1)]
-        linear_regressor.fit(r[:, 1].reshape(-1, 1), r[:, 3].reshape(-1, 1))
-        pred = linear_regressor.predict(r[:, 1].reshape(-1, 1))
-        ax[i].scatter(r[:, 1], r[:, 3])
-        ax[i].plot(r[:, 1], pred[:, 0])
-
-    return results, linear_regressor
 
 
 def deinit():

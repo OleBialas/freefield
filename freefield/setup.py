@@ -170,7 +170,7 @@ def set_variable(variable, value, proc='RX8s'):
             proc = [_procs._fields.index('RX81'), _procs._fields.index('RX82')]
         else:
             proc = [_procs._fields.index(proc)]
-    elif isinstance(proc, int):
+    elif isinstance(proc, int) or isinstance(proc, float):
         proc = [int(proc)]
     elif isinstance(proc, list):
         if not isinstance(all(proc), int):

@@ -367,17 +367,25 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
 # functions implementing complete procedures:
 
 
-def equalize_speakers_2(thresh=75, show_plot=False, test_filt=True):
+def equalize_speakers(thresh=75, show_plot=False, test_filt=True):
     import datetime
     printv('Starting calibration.')
     sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
     initialize_devices(RP2_file=_location.parent/"rcx"/"rec_buf.rcx",
                        RX8_file=_location.parent/"rcx"/"play_buf.rcx",
                        connection='GB')
-    filterbank = []
-    for i in range(1, 49):
-        filt = _equalize_speaker(i, sig)
-        filterbank.append(filt)
+    recordings = []
+    for i in range(1, 48):
+        rec = _play_and_record(i, sig)
+        # if nothing was recorded, set recording equal to signal so the
+        # resulting filter will be flat
+        if rec.level < 80:
+            rec.data = sig.data
+        recordings.append(rec.data)
+    rec = slab.Sound(recordings)
+    fbank, amp_diffs, freqs = \
+        slab.Filter.equalizing_filterbank(sig, rec, low_lim=50, hi_lim=16000)
+
     if _calibration_file.exists():
         date = datetime.datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")
         rename_previous = \
@@ -385,84 +393,84 @@ def equalize_speakers_2(thresh=75, show_plot=False, test_filt=True):
                                     + _calibration_file.suffix)
         _calibration_file.rename(rename_previous)
     # save filter file to 'calibration_arc.npy' or dome.
-    filterbank.save(_calibration_file)
+    fbank.save(_calibration_file)
     printv('Calibration completed.')
 
 
-def _equalize_speaker(speaker_nr, sig):
+def _play_and_record(speaker_nr, sig, compensate_delay=True):
+    """
+    Play the signal from a speaker and return the recording. Delay compensation
+    means making the buffer of the recording device n samples longer and then
+    throwing the first n samples away when returning the recording so sig and
+    rec still have the same legth. For this to work, the circuits rec_buf.rcx
+    and play_buf.rcx have to be initialized on RP2 and RX8s and the mic must
+    be plugged in.
+    Parameters:
+        speaker_nr: integer between 1 and 48, index number of the speaker
+        sig: instance of slab.Sound, signal that is played from the speaker
+        compensate_delay: bool, compensate the delay between play and record
+    Returns:
+        rec: 1-D array, recorded signal
+    """
+
     row = speaker_from_number(speaker_nr)
     set_variable(variable="playbuflen", value=sig.nsamples, proc="RX8s")
-    rec_delay = get_recording_delay(play_device="RX8", rec_device="RP2")
-    set_variable(variable="playbuflen",
-                 value=sig.nsamples+rec_delay, proc="RP2")
+    if compensate_delay:
+        n_delay = get_recording_delay(play_device="RX8", rec_device="RP2")
+    else:
+        n_delay = 0
+    set_variable(variable="playbuflen", value=sig.nsamples, proc="RX8s")
+    set_variable(variable="playbuflen", value=sig.nsamples+n_delay, proc="RP2")
     set_variable(variable="data", value=sig.data, proc="RX8s")
-    set_variable('chan', value=row[1], proc=int(row[2]))  # set speaker
+    set_variable('chan', value=row[0], proc=int(row[1]))  # set speaker
     trigger()  # start playing and wait
     wait_to_finish_playing(proc="all")
-    # load recording from device buffer throw away the first n samples
-    # to compensate for the recording delay.
     rec = get_variable(variable='data', proc='RP2',
-                       n_samples=sig.nsamples+rec_delay)[rec_delay:]
-    rec = slab.Sound(rec)
-    if rec.level < 80:  # no signal was obtained - filter should be flat
-        return
-    else:  # make inverse filter
-        filt, amp_diffs, freqs = \
-            slab.Filter.equalizing_filterbank(sig, rec,
-                                              low_lim=50, hi_lim=16000)
-        # now apply the filter, then play and record the filtered signal
-        sig_filt = filt.apply(sig)
-        set_variable(variable="data", value=sig_filt.data, proc="RX8s")
-        trigger()  # start playing and wait
-        wait_to_finish_playing(proc="all")
-        set_variable('chan', value=25, proc=int(row[2]))  # unset speaker
-        rec_filt = get_variable(variable='data', proc='RP2',
-                                n_samples=sig.nsamples+rec_delay)[rec_delay:]
-        rec_filt = slab.Sound(rec_filt)
-        _, amp_diffs_filt, _ = \
-            slab.Filter.equalizing_filterbank(sig_filt, rec_filt,
-                                              low_lim=50, hi_lim=16000)
-        # make and save plot:
-        fig, ax = plt.subplots(3, 2, figsize=(16., 8.))
-        fig.suptitle("Equalization Speaker Nr. %s at Azimuth: %s and"
-                     "Elevation: %s" % (speaker_nr, row[3], row[4]))
-        sig.spectrum(axes=ax[0, 0], label="played", c="blue", alpha=0.6)
-        rec.spectrum(axes=ax[0, 0], alpha=0.6, label="recorded", c="red")
-        ax[0, 0].semilogx(freqs[1:-1], amp_diffs, c="black",
-                          label="difference", linestyle="dashed")
-        ax[0, 0].axhline(y=0, linestyle="--", color="black", linewidth=0.5)
-        ax[0, 0].legend()
-        ax[0, 1].plot(sig.times*1000, sig.data, alpha=0.6, c="blue")
-        ax[0, 1].plot(rec.times*1000, rec.data, alpha=0.6, c="red")
-        ax[0, 1].set_title("Time Course")
-        ax[0, 1].set_ylabel("Amplitude in Volts")
-        w, h = filt.tf(plot=False)
-        ax[1, 0].semilogx(w, h, c="black")
-        ax[1, 0].set_title("Equalization Filter Transfer Function")
-        ax[1, 0].set_xlabel("Frequency in Hz")
-        ax[1, 0].set_ylabel("Magnitude in Decibels")
-        ax[1, 1].plot(filt.times, filt.data, c="black")
-        ax[1, 1].set_title("Equalization Filter Impulse Response")
-        ax[1, 1].set_xlabel("Time in Milliseconds")
-        ax[1, 1].set_ylabel("Amplitude")
-        sig_filt.spectrum(axes=ax[2, 0], label="played", c="blue", alpha=0.6)
-        rec_filt.spectrum(axes=ax[2, 0], alpha=0.6, label="recorded", c="red")
-        ax[2, 0].semilogx(freqs[1:-1], amp_diffs_filt, c="black",
-                          label="difference", linestyle="dashed")
-        ax[2, 0].axhline(y=0, linestyle="--", color="black", linewidth=0.5)
-        ax[2, 0].legend()
-        ax[2, 1].plot(sig_filt.times*1000, sig.data, alpha=0.6, c="blue")
-        ax[2, 1].plot(rec_filt.times*1000, rec.data, alpha=0.6, c="red")
-        ax[2, 1].set_title("Time Course")
-        ax[2, 1].set_ylabel("Amplitude in Volts")
-        fig.savefig(_location.parent/Path("log/speaker_%s_equalization.pdf"
-                                          % (speaker_nr)), dpi=1200)
-        plt.close()
+                       n_samples=sig.nsamples+n_delay)[n_delay:]
+    return slab.Sound(rec)
+
+
+def plot_stuff():
+    # make and save plot:
+    fig, ax = plt.subplots(3, 2, figsize=(16., 8.))
+    fig.suptitle("Equalization Speaker Nr. %s at Azimuth: %s and"
+                 "Elevation: %s" % (speaker_nr, row[3], row[4]))
+    sig.spectrum(axes=ax[0, 0], label="played", c="blue", alpha=0.6)
+    rec.spectrum(axes=ax[0, 0], alpha=0.6, label="recorded", c="red")
+    ax[0, 0].semilogx(freqs[1:-1], amp_diffs, c="black",
+                      label="difference", linestyle="dashed")
+    ax[0, 0].axhline(y=0, linestyle="--", color="black", linewidth=0.5)
+    ax[0, 0].legend()
+    ax[0, 1].plot(sig.times*1000, sig.data, alpha=0.6, c="blue")
+    ax[0, 1].plot(rec.times*1000, rec.data, alpha=0.6, c="red")
+    ax[0, 1].set_title("Time Course")
+    ax[0, 1].set_ylabel("Amplitude in Volts")
+    w, h = filt.tf(plot=False)
+    ax[1, 0].semilogx(w, h, c="black")
+    ax[1, 0].set_title("Equalization Filter Transfer Function")
+    ax[1, 0].set_xlabel("Frequency in Hz")
+    ax[1, 0].set_ylabel("Magnitude in Decibels")
+    ax[1, 1].plot(filt.times, filt.data, c="black")
+    ax[1, 1].set_title("Equalization Filter Impulse Response")
+    ax[1, 1].set_xlabel("Time in Milliseconds")
+    ax[1, 1].set_ylabel("Amplitude")
+    sig_filt.spectrum(axes=ax[2, 0], label="played", c="blue", alpha=0.6)
+    rec_filt.spectrum(axes=ax[2, 0], alpha=0.6, label="recorded", c="red")
+    ax[2, 0].semilogx(freqs[1:-1], amp_diffs_filt, c="black",
+                      label="difference", linestyle="dashed")
+    ax[2, 0].axhline(y=0, linestyle="--", color="black", linewidth=0.5)
+    ax[2, 0].legend()
+    ax[2, 1].plot(sig_filt.times*1000, sig.data, alpha=0.6, c="blue")
+    ax[2, 1].plot(rec_filt.times*1000, rec.data, alpha=0.6, c="red")
+    ax[2, 1].set_title("Time Course")
+    ax[2, 1].set_ylabel("Amplitude in Volts")
+    fig.savefig(_location.parent/Path("log/speaker_%s_equalization.pdf"
+                                      % (speaker_nr)), dpi=1200)
+    plt.close()
     return filt
 
 
-def test_calibration():
-
+# def test_calibration():
 
 """
 # old scripts, remove once the new ones are tested:
@@ -600,5 +608,4 @@ def test_equalizing_filter(sig, old_rec, show_plot):
         fig.savefig(_location.parent/Path("log/speaker_%s_before_and_after_"
                                           "equalizing_filter.png" % (row[0])),
                     dpi=1200)
-        plt.close()
-"""
+        plt.close() """

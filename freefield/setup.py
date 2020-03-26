@@ -368,12 +368,13 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
 
 
 def equalize_speakers(threshold=75):
+    global _calibration_filter
     import datetime
     printv('Starting calibration.')
-    sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
     initialize_devices(RP2_file=_location.parent/"rcx"/"rec_buf.rcx",
                        RX8_file=_location.parent/"rcx"/"play_buf.rcx",
                        connection='GB')
+    sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
     recordings = []
     for row in _speaker_table:
         if row[0] == row[0]:  # ignore nan
@@ -387,7 +388,7 @@ def equalize_speakers(threshold=75):
     fbank, amp_diffs, freqs = \
         slab.Filter.equalizing_filterbank(sig, rec, low_lim=50, hi_lim=16000)
 
-    for i in rec.nchannels:  # save plot for each speaker
+    for i in range(rec.nchannels):  # save plot for each speaker
         _plot_equalization(sig, rec.channel(i), fbank.channel(i), i+1)
 
     if _calibration_file.exists():
@@ -398,6 +399,7 @@ def equalize_speakers(threshold=75):
         _calibration_file.rename(rename_previous)
     # save filter file to 'calibration_arc.npy' or dome.
     fbank.save(_calibration_file)
+    _calibration_filter = slab.Filter.load(_calibration_file)
     printv('Calibration completed.')
 
 
@@ -412,6 +414,7 @@ def spectral_variance(sig, threshold=75):
             rec = _play_and_record(row[0], sig)
             if rec.level > threshold:
                 recordings.append(rec)
+    recordings = slab.Sound(recordings)
 
 
 def _play_and_record(speaker_nr, sig, compensate_delay=True):
@@ -451,8 +454,8 @@ def _plot_equalization(sig, rec, filt, speaker_nr):
     row = speaker_from_number(speaker_nr)
     sig_filt = filt.apply(sig)
     fig, ax = plt.subplots(2, 2, figsize=(16., 8.))
-    fig.suptitle("Equalization Speaker Nr. %s at Azimuth: %s and"
-                 "Elevation: %s" % (speaker_nr, row[3], row[4]))
+    fig.suptitle("Equalization Speaker Nr. %s at Azimuth: %s and "
+                 "Elevation: %s" % (speaker_nr, row[2], row[3]))
     sig.spectrum(axes=ax[0, 0], label="signal", alpha=0.5, c="blue")
     rec.spectrum(axes=ax[0, 0], alpha=0.5, label="recording", c="red")
     sig_filt.spectrum(axes=ax[0, 0], alpha=0.5, label="filtered", c="green")

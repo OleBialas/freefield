@@ -2,10 +2,11 @@ import time
 from freefield import camera
 from pathlib import Path
 import collections
-import numpy
+import numpy as np
 import slab
 from sys import platform
 from matplotlib import pyplot as plt
+from matplotlib.axes import Axes
 
 if "win" in platform:
     import win32com.client
@@ -137,10 +138,10 @@ def set_speaker_config(setup='arc'):
         raise ValueError("Unknown device! Use 'arc' or 'dome'.")
     printv(f'Speaker configuration set to {setup}.')
     # lambdas provide default values of 0 if azi or ele are not in the file
-    _speaker_table = numpy.loadtxt(fname=table_file, delimiter=',', skiprows=1,
-                                   converters={3: lambda s: float(s or 0),
-                                               4: lambda s: float(s or 0)})
-    idx = numpy.where(_speaker_table == -999.)
+    _speaker_table = np.loadtxt(fname=table_file, delimiter=',', skiprows=1,
+                                converters={3: lambda s: float(s or 0),
+                                            4: lambda s: float(s or 0)})
+    idx = np.where(_speaker_table == -999.)
     _speaker_table[idx[0], idx[1]] = None  # change the placeholder -999 to NaN
     printv('Speaker table loaded.')
     if _calibration_file.exists():
@@ -181,7 +182,7 @@ def set_variable(variable, value, proc='RX8s'):
                          "list of integers!")
 
     for p in proc:
-        if isinstance(value, (list, numpy.ndarray)):
+        if isinstance(value, (list, np.ndarray)):
             flag = _procs[p]._oleobj_.InvokeTypes(
                 15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)),
                 variable, 0, value)
@@ -210,7 +211,7 @@ def get_variable(variable=None, n_samples=1, proc='RX81', supress_print=False):
     if isinstance(proc, str):
         proc = _procs._fields.index(proc)
     if n_samples > 1:
-        value = numpy.asarray(_procs[proc].ReadTagV(variable, 0, n_samples))
+        value = np.asarray(_procs[proc].ReadTagV(variable, 0, n_samples))
     else:
         value = _procs[proc].GetTagVal(variable)
     if not supress_print:
@@ -269,7 +270,7 @@ def speaker_from_direction(azimuth=0, elevation=0):
         Returns the speaker, channel, and RX8 index that the speaker
         at a given azimuth and elevation is attached to.
         '''
-    row = int(numpy.argwhere(numpy.logical_and(
+    row = int(np.argwhere(np.logical_and(
         _speaker_table[:, 3] == azimuth, _speaker_table[:, 4] == elevation)))
     return _speaker_table[row, 0:3]  # returns speaker, channel, and RX8 index
 
@@ -279,7 +280,7 @@ def speaker_from_number(speaker):
         Returns the channel, RX8 index, azimuth, and elevation
         that the speaker with a given number (1-48) is attached to.
         '''
-    row = int(numpy.argwhere(_speaker_table[:, 0] == speaker))
+    row = int(np.argwhere(_speaker_table[:, 0] == speaker))
     channel = int(_speaker_table[row, 1])
     rx8 = int(_speaker_table[row, 2])
     azimuth = int(_speaker_table[row, 3])
@@ -293,7 +294,7 @@ def all_leds():
     Get speaker, RX8 index, and bitmask of all speakers which have a LED
     attached --> won't be necessary once all speakers have LEDs
         '''
-    idx = numpy.where(_speaker_table[:, 5] == _speaker_table[:, 5])[0]
+    idx = np.where(_speaker_table[:, 5] == _speaker_table[:, 5])[0]
     return _speaker_table[idx]
 
 
@@ -403,18 +404,45 @@ def equalize_speakers(threshold=75):
     printv('Calibration completed.')
 
 
-def spectral_variance(sig, threshold=75):
+def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,
+                   plot=True):
     """
-    Measure the spectral variance across speakers.
-    play signal from each speaker, look how much they differ in their spectrum
+    Compute the range of differences in power spectrum for all channels in
+    the signal. The signal is devided into bands of equivalent rectangular
+    bandwidth (ERB - see More&Glasberg 1982) and the level is computed for
+    each frequency band and each channel in the recording. To show the range
+    of spectral difference across channels the minimum and maximum levels
+    across channels are computed. Can be used for example to check the
+    effect of loud speaker equalization.
     """
-    recordings = []
-    for row in _speaker_table:
-        if row[0] == row[0]:
-            rec = _play_and_record(row[0], sig)
-            if rec.level > threshold:
-                recordings.append(rec)
-    recordings = slab.Sound(recordings)
+    # generate ERB-spaced filterbank:
+    fbank = slab.Filter.cos_filterbank(length=1000, bandwidth=bandwidth,
+                                       low_lim=low_lim, hi_lim=hi_lim,
+                                       samplerate=signal.samplerate)
+    center_freqs, _, _ = slab.Filter._center_freqs(low_lim, hi_lim, bandwidth)
+    center_freqs = slab.Filter._erb2freq(center_freqs)
+    # create arrays to write data into:
+    levels = np.zeros((signal.nchannels, fbank.nchannels))
+    max_level, min_level = np.zeros(fbank.nchannels), np.zeros(fbank.nchannels)
+    for i in range(signal.nchannels):  # compute ERB levels for each channel
+        levels[i] = fbank.apply(signal.channel(i)).level
+    for i in range(fbank.nchannels):  # find max and min for each frequency
+        max_level[i] = max(levels[:, i])
+        min_level[i] = min(levels[:, i])
+    difference = max_level-min_level
+    if plot is True or isinstance(plot, Axes):
+        if isinstance(plot, Axes):
+            ax = plot
+        else:
+            fig, ax = plt.subplots(1)
+        # frequencies where the difference exceeds the threshold
+        bads = np.where(difference > thresh)[0]
+        for y in [max_level, min_level]:
+            ax.plot(center_freqs, y, color="black", linestyle="--")
+        for bad in bads:
+            ax.fill_between(center_freqs[bad-1:bad+1], max_level[bad-1:bad+1],
+                            min_level[bad-1:bad+1], color="red", alpha=.6)
+    return difference
 
 
 def _play_and_record(speaker_nr, sig, compensate_delay=True):

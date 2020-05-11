@@ -208,6 +208,7 @@ def get_variable(variable=None, n_samples=1, proc='RX81', supress_print=False):
         Example:
         get_variable('playing', proc='RX81')
         '''
+    # TODO: check if something was returned
     if isinstance(proc, str):
         proc = _procs._fields.index(proc)
     if n_samples > 1:
@@ -365,43 +366,93 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
         n_ad = 0
     return n_sound_traveling + n_da + n_ad
 
+
 # functions implementing complete procedures:
-
-
-def equalize_speakers(threshold=75):
+def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
+                      freq_range=(200, 16000), thresh=75, factor=1.,
+                      plot=False):
     global _calibration_filter
     import datetime
     printv('Starting calibration.')
-    initialize_devices(RP2_file=_location.parent/"rcx"/"rec_buf.rcx",
-                       RX8_file=_location.parent/"rcx"/"play_buf.rcx",
-                       connection='GB')
+    if not _isinit:
+        initialize_devices(RP2_file=_location.parent/"rcx"/"rec_buf.rcx",
+                           RX8_file=_location.parent/"rcx"/"play_buf.rcx",
+                           connection='GB')
     sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
     recordings = []
+
     for row in _speaker_table:
-        if row[0] == row[0]:  # ignore nan
-            rec = _play_and_record(row[0], sig)
-            # if nothing was recorded, set recording equal to signal so the
-            # resulting filter will be flat
-            if rec.level < threshold:
-                rec.data = sig.data
-            recordings.append(rec.data)
-    rec = slab.Sound(recordings)
-    fbank, amp_diffs, freqs = \
-        slab.Filter.equalizing_filterbank(sig, rec, low_lim=50, hi_lim=16000)
-
-    for i in range(rec.nchannels):  # save plot for each speaker
-        _plot_equalization(sig, rec.channel(i), fbank.channel(i), i+1)
-
+        rec = _play_and_record(row[0], sig)
+        if row[0] == target_speaker:
+            target = rec
+        recordings.append(rec.data)
+    recordings = slab.Sound(recordings)
+    # level below threshold means .nothing was recorded --> set these channels
+    # equal to signal so the resulting filter will do nothing
+    recordings.data[:, recordings.level < thresh] = target.data
+    # create the equalizing filterbank:
+    fbank = slab.Filter.equalizing_filterbank(
+        target=target, signal=recordings, low_lim=freq_range[0],
+        hi_lim=freq_range[1], factor=factor, bandwidth=bandwidth)
+    if plot:  # save plot for each speaker
+        for i in range(recordings.nchannels):
+            _plot_equalization(target, recordings.channel(i),
+                               fbank.channel(i), i)
+    # save the filterbank and rename the old one
     if _calibration_file.exists():
         date = datetime.datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")
         rename_previous = \
             _location.parent / Path("log/"+_calibration_file.stem + date
                                     + _calibration_file.suffix)
         _calibration_file.rename(rename_previous)
-    # save filter file to 'calibration_arc.npy' or dome.
-    fbank.save(_calibration_file)
+    fbank.save(_calibration_file)  # save as 'calibration_arc.npy' or dome.
     _calibration_filter = slab.Filter.load(_calibration_file)
     printv('Calibration completed.')
+
+
+def test_equalization(speakers="all", title="", thresh=75):
+    """
+    play chirp with and without the equalization filter and compare the
+    results.
+    """
+    sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
+    recordings = []
+    recordings_filt = []
+    # TODO: this should be a separate function
+    if speakers == "all":  # use the whole speaker table
+        speaker_list = _speaker_table
+    elif isinstance(speakers, list):  # use a subset of speakers
+        if all(isinstance(x, int) for x in speakers):
+            speaker_list = [speaker_from_number(x) for x in speakers]
+        elif all(isinstance(x, tuple) for x in speakers):
+            speaker_list = \
+                [speaker_from_direction(x[0], x[1]) for x in speakers]
+        else:
+            raise ValueError("the list of speakers must contain either \n"
+                             "integers (speaker numbers) or \n"
+                             "tuples (azimuth and elevation)")
+
+    for i, row in enumerate(speaker_list):
+        rec = _play_and_record(row[0], sig)
+        recordings.append(rec.data)
+        filt = _calibration_filter.channel(i)
+        rec = _play_and_record(row[0], filt.apply(sig, compensate_shift=True))
+        recordings_filt.append(rec.data)
+
+    recordings_filt = slab.Sound(recordings_filt)
+    recordings = slab.Sound(recordings)
+    if thresh is not None:
+        recordings.data = recordings.data[:, recordings.level > thresh]
+        recordings_filt.data = \
+            recordings_filt.data[:, recordings_filt.level > thresh]
+
+    fig, ax = plt.subplots(2, 2)
+    fig.suptitle(title)
+    spectral_range(recordings, plot=ax[0, 0])
+    spectral_range(recordings_filt, plot=ax[1, 0])
+    recordings.spectrum(axes=ax[0, 1])
+    recordings_filt.spectrum(axes=ax[1, 1])
+    plt.show()
 
 
 def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,
@@ -445,7 +496,7 @@ def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,
     return difference
 
 
-def _play_and_record(speaker_nr, sig, compensate_delay=True):
+def _play_and_record(speaker_nr, sig, compensate_delay=True, binaural=False):
     """
     Play the signal from a speaker and return the recording. Delay compensation
     means making the buffer of the recording device n samples longer and then
@@ -473,35 +524,51 @@ def _play_and_record(speaker_nr, sig, compensate_delay=True):
     set_variable('chan', value=row[0], proc=int(row[1]))  # set speaker
     trigger()  # start playing and wait
     wait_to_finish_playing(proc="all")
-    rec = get_variable(variable='data', proc='RP2',
-                       n_samples=sig.nsamples+n_delay)[n_delay:]
-    return slab.Sound(rec)
+    if binaural is False:
+        rec = get_variable(variable='data', proc='RP2',
+                           n_samples=sig.nsamples+n_delay)[n_delay:]
+    if binaural is True:
+        recl = get_variable(variable='datal', proc='RP2',
+                            n_samples=sig.nsamples+n_delay)[n_delay:]
+        recr = get_variable(variable='datar', proc='RP2',
+                            n_samples=sig.nsamples+n_delay)[n_delay:]
+        rec = [recl, recr]
+    return slab.Sound(rec)  # names for channels?
 
 
-def _plot_equalization(sig, rec, filt, speaker_nr):
-    row = speaker_from_number(speaker_nr)
-    sig_filt = filt.apply(sig)
+def _plot_equalization(target, signal, filt, speaker_nr, low_lim=50,
+                       hi_lim=20000, bandwidth=1/8):
+    """
+    Make a plot to show the effect of the equalizing FIR-filter on the
+    signal in the time and frequency domain. The plot is saved to the log
+    folder (existing plots are overwritten)
+    """
+    row = speaker_from_number(speaker_nr)  # get the speaker
+    signal_filt = filt.apply(signal)  # apply the filter to the signal
     fig, ax = plt.subplots(2, 2, figsize=(16., 8.))
     fig.suptitle("Equalization Speaker Nr. %s at Azimuth: %s and "
                  "Elevation: %s" % (speaker_nr, row[2], row[3]))
-    sig.spectrum(axes=ax[0, 0], label="signal", alpha=0.5, c="blue")
-    rec.spectrum(axes=ax[0, 0], alpha=0.5, label="recording", c="red")
-    sig_filt.spectrum(axes=ax[0, 0], alpha=0.5, label="filtered", c="green")
+    ax[0, 0].set(title="Power per ERB-Subband", ylabel="A")
+    ax[0, 1].set(title="Time Series", ylabel="Amplitude in Volts")
+    ax[1, 0].set(title="Equalization Filter Transfer Function",
+                 xlabel="Frequency in Hz", ylabel="Amplitude in dB")
+    ax[1, 1].set(title="Filter Impulse Response",
+                 xlabel="Time in ms", ylabel="Amplitude")
+    # get level per subband for target, signal and filtered signal
+    fbank = slab.Filter.cos_filterbank(
+        1000, bandwidth, low_lim, hi_lim, signal.samplerate)
+    center_freqs, _, _ = slab.Filter._center_freqs(low_lim, hi_lim, bandwidth)
+    center_freqs = slab.Filter._erb2freq(center_freqs)
+    for data, name, color in zip([target, signal, signal_filt],
+                                 ["target", "signal", "filtered"],
+                                 ["red", "blue", "green"]):
+        levels = fbank.apply(data).level
+        ax[0, 0].plot(center_freqs, levels, label=name, color=color)
+        ax[0, 1].plot(data.times*1000, data.data, alpha=0.5, color=color)
     ax[0, 0].legend()
-    ax[0, 1].plot(sig.times*1000, sig.data, alpha=0.5, c="blue")
-    ax[0, 1].plot(rec.times*1000, rec.data, alpha=0.5, c="red")
-    ax[0, 1].plot(sig_filt.times*1000, sig_filt.data, alpha=0.5, c="green")
-    ax[0, 1].set_title("Time Course")
-    ax[0, 1].set_ylabel("Amplitude in Volts")
     w, h = filt.tf(plot=False)
     ax[1, 0].semilogx(w, h, c="black")
-    ax[1, 0].set_title("Equalization Filter Transfer Function")
-    ax[1, 0].set_xlabel("Frequency in Hz")
-    ax[1, 0].set_ylabel("Magnitude in Decibels")
     ax[1, 1].plot(filt.times, filt.data, c="black")
-    ax[1, 1].set_title("Equalization Filter Impulse Response")
-    ax[1, 1].set_xlabel("Time in Milliseconds")
-    ax[1, 1].set_ylabel("Amplitude")
     fig.savefig(_location.parent/Path("log/speaker_%s_equalization.pdf"
                                       % (speaker_nr)), dpi=800)
     plt.close()

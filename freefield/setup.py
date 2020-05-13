@@ -1,5 +1,4 @@
 import time
-from freefield import camera
 from pathlib import Path
 import collections
 import numpy as np
@@ -7,6 +6,7 @@ import slab
 from sys import platform
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
+from freefield import camera
 
 if "win" in platform:
     import win32com.client
@@ -24,6 +24,7 @@ _procs = None
 _location = Path(__file__).resolve().parents[0]
 _samplerate = 48828  # inherit from slab?
 _isinit = False
+_level = 90  # default level for sounds
 
 
 def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None,
@@ -37,6 +38,7 @@ def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None,
     Use the argument RX8_file to initialize RX81 and RX82 with the same file.
     Initialzation will take a few seconds per device
     """
+    # TODO: Add option to initalize the setup with different "modes"
     global _procs, _isinit
     slab.Signal.set_default_samplerate(48828.125)
     printv("Setting the default samplerate for generating sounds,"
@@ -379,10 +381,11 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
                            RX8_file=_location.parent/"rcx"/"play_buf.rcx",
                            connection='GB')
     sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
+    sig.level = _level
     recordings = []
 
     for row in _speaker_table:
-        rec = _play_and_record(row[0], sig)
+        rec = play_and_record(row[0], sig)
         if row[0] == target_speaker:
             target = rec
         recordings.append(rec.data)
@@ -416,6 +419,7 @@ def test_equalization(speakers="all", title="", thresh=75):
     results.
     """
     sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
+    sig.level = _level
     recordings = []
     recordings_filt = []
     # TODO: this should be a separate function
@@ -433,10 +437,10 @@ def test_equalization(speakers="all", title="", thresh=75):
                              "tuples (azimuth and elevation)")
 
     for i, row in enumerate(speaker_list):
-        rec = _play_and_record(row[0], sig)
+        rec = play_and_record(row[0], sig)
         recordings.append(rec.data)
         filt = _calibration_filter.channel(i)
-        rec = _play_and_record(row[0], filt.apply(sig, compensate_shift=True))
+        rec = play_and_record(row[0], filt.apply(sig, compensate_shift=True))
         recordings_filt.append(rec.data)
 
     recordings_filt = slab.Sound(recordings_filt)
@@ -446,7 +450,7 @@ def test_equalization(speakers="all", title="", thresh=75):
         recordings_filt.data = \
             recordings_filt.data[:, recordings_filt.level > thresh]
 
-    fig, ax = plt.subplots(2, 2)
+    fig, ax = plt.subplots(2, 2, sharex="col", sharey="col")
     fig.suptitle(title)
     spectral_range(recordings, plot=ax[0, 0])
     spectral_range(recordings_filt, plot=ax[1, 0])
@@ -456,7 +460,7 @@ def test_equalization(speakers="all", title="", thresh=75):
 
 
 def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,
-                   plot=True):
+                   plot=True, log=True):
     """
     Compute the range of differences in power spectrum for all channels in
     the signal. The signal is devided into bands of equivalent rectangular
@@ -489,14 +493,17 @@ def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,
         # frequencies where the difference exceeds the threshold
         bads = np.where(difference > thresh)[0]
         for y in [max_level, min_level]:
-            ax.plot(center_freqs, y, color="black", linestyle="--")
+            if log is True:
+                ax.semilogx(center_freqs, y, color="black", linestyle="--")
+            else:
+                ax.plot(center_freqs, y, color="black", linestyle="--")
         for bad in bads:
             ax.fill_between(center_freqs[bad-1:bad+1], max_level[bad-1:bad+1],
                             min_level[bad-1:bad+1], color="red", alpha=.6)
     return difference
 
 
-def _play_and_record(speaker_nr, sig, compensate_delay=True, binaural=False):
+def play_and_record(speaker_nr, sig, compensate_delay=True, binaural=False):
     """
     Play the signal from a speaker and return the recording. Delay compensation
     means making the buffer of the recording device n samples longer and then

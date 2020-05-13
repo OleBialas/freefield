@@ -24,7 +24,11 @@ _procs = None
 _location = Path(__file__).resolve().parents[0]
 _samplerate = 48828  # inherit from slab?
 _isinit = False
+<<<<<<< HEAD
 _level = 90  # default level for sounds
+=======
+_print_list = []
+>>>>>>> 54371552bb3dc783f6fecdad07fbc001553bc770
 
 
 def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None,
@@ -210,7 +214,6 @@ def get_variable(variable=None, n_samples=1, proc='RX81', supress_print=False):
         Example:
         get_variable('playing', proc='RX81')
         '''
-    # TODO: check if something was returned
     if isinstance(proc, str):
         proc = _procs._fields.index(proc)
     if n_samples > 1:
@@ -219,6 +222,9 @@ def get_variable(variable=None, n_samples=1, proc='RX81', supress_print=False):
         value = _procs[proc].GetTagVal(variable)
     if not supress_print:
         printv(f'Got {variable} from {_procs._fields[proc]}.')
+    if value == 0:
+        printv(f'{variable} from {_procs._fields[proc]} was returned as 0 \n'
+               'this is probably an error')
     return value
 
 
@@ -292,6 +298,25 @@ def speaker_from_number(speaker):
     return channel, rx8, azimuth, elevation
 
 
+def speakers_from_list(speakers):
+    """
+    Get a subset of speakers from a list that contains either speaker numbers
+    of tuples with (azimuth, elevation) of each speaker
+    """
+    if not isinstance(speakers, list):
+        raise ValueError("speakers mut be a list!")
+    if all(isinstance(x, int) for x in speakers):
+        speaker_list = [speaker_from_number(x) for x in speakers]
+    elif all(isinstance(x, tuple) for x in speakers):
+        speaker_list = \
+            [speaker_from_direction(x[0], x[1]) for x in speakers]
+    else:
+        raise ValueError("the list of speakers must contain either \n"
+                         "integers (speaker numbers) or \n"
+                         "tuples (azimuth and elevation)")
+    return speaker_list
+
+
 def all_leds():
     '''
     Get speaker, RX8 index, and bitmask of all speakers which have a LED
@@ -333,11 +358,18 @@ def get_headpose(n_images=10):
     return x, y, z
 
 
-def printv(*args, **kwargs):
-    global _last_print
-    if _verbose:
-        print(*args, **kwargs)
-    # TODO: Only print if the same message hasn't been printed before
+def printv(message):
+    """
+    Print a message if _verbose is True and the message is not among the
+    last 5 printed messages
+    """
+    # TODO: set different verbosity levels
+    global _print_list
+    if _verbose and message not in _print_list:
+        print(message)
+        _print_list.append(message)
+        if len(_print_list) > 5:
+            _print_list.remove(_print_list[0])
 
 
 def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
@@ -383,9 +415,18 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
     sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
     sig.level = _level
     recordings = []
+<<<<<<< HEAD
 
     for row in _speaker_table:
         rec = play_and_record(row[0], sig)
+=======
+    if speakers == "all":  # use the whole speaker table
+        speaker_list = _speaker_table
+    else:  # use a subset of speakers
+        speaker_list = speakers_from_list(speakers)
+    for row in speaker_list:
+        rec = _play_and_record(row[0], sig)
+>>>>>>> 54371552bb3dc783f6fecdad07fbc001553bc770
         if row[0] == target_speaker:
             target = rec
         recordings.append(rec.data)
@@ -422,20 +463,10 @@ def test_equalization(speakers="all", title="", thresh=75):
     sig.level = _level
     recordings = []
     recordings_filt = []
-    # TODO: this should be a separate function
     if speakers == "all":  # use the whole speaker table
         speaker_list = _speaker_table
-    elif isinstance(speakers, list):  # use a subset of speakers
-        if all(isinstance(x, int) for x in speakers):
-            speaker_list = [speaker_from_number(x) for x in speakers]
-        elif all(isinstance(x, tuple) for x in speakers):
-            speaker_list = \
-                [speaker_from_direction(x[0], x[1]) for x in speakers]
-        else:
-            raise ValueError("the list of speakers must contain either \n"
-                             "integers (speaker numbers) or \n"
-                             "tuples (azimuth and elevation)")
-
+    else:  # use a subset of speakers
+        speaker_list = speakers_from_list(speakers)
     for i, row in enumerate(speaker_list):
         rec = play_and_record(row[0], sig)
         recordings.append(rec.data)

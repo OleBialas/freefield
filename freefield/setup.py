@@ -24,11 +24,8 @@ _procs = None
 _location = Path(__file__).resolve().parents[0]
 _samplerate = 48828  # inherit from slab?
 _isinit = False
-<<<<<<< HEAD
-_level = 90  # default level for sounds
-=======
 _print_list = []
->>>>>>> 54371552bb3dc783f6fecdad07fbc001553bc770
+_level = 90
 
 
 def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None,
@@ -222,7 +219,7 @@ def get_variable(variable=None, n_samples=1, proc='RX81', supress_print=False):
         value = _procs[proc].GetTagVal(variable)
     if not supress_print:
         printv(f'Got {variable} from {_procs._fields[proc]}.')
-    if value == 0:
+    if value is 0:
         printv(f'{variable} from {_procs._fields[proc]} was returned as 0 \n'
                'this is probably an error')
     return value
@@ -415,18 +412,12 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
     sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
     sig.level = _level
     recordings = []
-<<<<<<< HEAD
-
-    for row in _speaker_table:
-        rec = play_and_record(row[0], sig)
-=======
     if speakers == "all":  # use the whole speaker table
         speaker_list = _speaker_table
     else:  # use a subset of speakers
         speaker_list = speakers_from_list(speakers)
     for row in speaker_list:
-        rec = _play_and_record(row[0], sig)
->>>>>>> 54371552bb3dc783f6fecdad07fbc001553bc770
+        rec = play_and_record(row[0], sig)
         if row[0] == target_speaker:
             target = rec
         recordings.append(rec.data)

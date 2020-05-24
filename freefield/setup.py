@@ -219,7 +219,7 @@ def get_variable(variable=None, n_samples=1, proc='RX81', supress_print=False):
         value = _procs[proc].GetTagVal(variable)
     if not supress_print:
         printv(f'Got {variable} from {_procs._fields[proc]}.')
-    if value is 0:
+    if value != 0:
         printv(f'{variable} from {_procs._fields[proc]} was returned as 0 \n'
                'this is probably an error')
     return value

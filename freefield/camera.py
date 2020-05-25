@@ -1,5 +1,8 @@
 import numpy  # for some reason numpy must be imported before PySpin
-import PySpin
+try:
+    import PySpin
+except ImportError:
+    pass
 import cv2
 import dlib
 from imutils import face_utils
@@ -157,7 +160,7 @@ def get_headpose(cams="all", convert_coordinates=False, n_average=1):
     for i in range(n_average):
         images = acquire_image(cams)  # take images
         for i, image in enumerate(images):
-            e, a, _ = pose_from_image(image)
+            e, a, _ = _pose_from_image(image)
         ele += e
         azi += a
     ele /= n_average
@@ -173,7 +176,7 @@ def get_headpose(cams="all", convert_coordinates=False, n_average=1):
     return ele, azi
 
 
-def pose_from_image(image, plot_arg=None):
+def _pose_from_image(image, plot_arg=None):
     """
     Compute the head pose from an image, which must be a 2d (grayscale) or
     3d (color) numpy array. If only_euler=True (default), only angles azimuth,
@@ -258,7 +261,7 @@ def calibrate_camera(target_positions=None, n_repeat=1):
     be computed. The regression coefficients (slope and intercept) will be
     stored in the environment variables _azi_reg and _ele_reg. The coordinates
     used to compute the regression are also returned (mostly for debugging
-    purposes). # TODO: implement multiple cameras
+    purposes).
     Attributes:
     target_positions (list of tuples): elevation and azimuth for any number of
         points in world coordinates
@@ -274,26 +277,22 @@ def calibrate_camera(target_positions=None, n_repeat=1):
         raise ValueError("Define target positions for calibrating webcam!")
     elif _cam_type is None:
         raise ValueError("Initialize Camera before calibration!")
-    elif _cam_type == "freefield":  # initialize the setup
-        if target_positions is not None:
-            raise ValueError(
-                "Can't set target positions for freefield calibration!")
-        rp2_file = _location.parents[0] / Path("rcx/button_response.rcx")
-        rx8_file = _location.parents[0] / Path("rcx/leds.rcx")
-        setup.initialize_devices(RX8_file=rx8_file, RP2_file=rp2_file,
-                                 ZBus=True, cam=True)
-        leds = setup.all_leds()
+    if not setup._mode == "camera_calibration":  # initialize setup
+        setup.initialize_devices(mode="camera_calibration")
+        # TODO: how to set the targets for the arc ???
+        leds = setup.all_leds()  # get the speakers that have a LED attached
         target_positions = [(l[4], l[3]) for l in leds]
     seq = slab.psychoacoustics.Trialsequence(
-        name="cam", n_reps=n_repeat, conditions=range(len(target_positions)))
-    while seq.n_remaining:
-        pos = target_positions[seq.__next__()]
+        name="cam", n_reps=n_repeat, conditions=target_positions)
+    while seq.n_remaining > 0:
+        pos = seq.__next__()
         world_coordinates.append(pos)
         if _cam_type == "web":  # look at target position and press enter
             input("point your head towards the target at elevation: %s and "
                   "azimuth %s. \n Then press enter to take an image an get "
                   "the headpose" % (pos[0], pos[1]))
         elif _cam_type == "freefield":  # light LED and wait for button press
+            leds=setup.all_leds()
             proc, bitval = leds[seq.this_trial][6], leds[seq.this_trial][5]
             setup.printv("trial nr %s: speaker at azi: %s and ele: of %s" %
                          (seq.this_n, pos[1], pos[0]))
@@ -303,7 +302,7 @@ def calibrate_camera(target_positions=None, n_repeat=1):
                 time.sleep(0.1)  # wait untill button is pressed
         images = acquire_image(cams="all")  # get list containing image(s)
         for i, image in enumerate(images):
-            ele, azi, _ = pose_from_image(image)
+            ele, azi, _ = _pose_from_image(image)
             if ele is not None and azi is not None:
                 camera_coordinates[i].append((ele, azi))
                 world_coordinates[i].append(pos)

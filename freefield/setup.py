@@ -22,15 +22,15 @@ _calibration_filter = None
 _speaker_table = None
 _procs = None
 _location = Path(__file__).resolve().parents[0]
-_samplerate = 48828  # inherit from slab?
-_isinit = False
+_samplerate = 48828.125
+_mode = None
 _print_list = []
 _level = 90
 
 
-def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None,
+def initialize_devices(ZBus=False, RX81_file=None, RX82_file=None,
                        RP2_file=None, RX8_file=None, cam=False,
-                       connection='GB'):
+                       connection='GB', mode=None):
     """
     Initialize the different TDT-devices. The input for ZBus and cam is True
     or False, depending on whether you want to use ZBus triggering and the
@@ -39,16 +39,19 @@ def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None,
     Use the argument RX8_file to initialize RX81 and RX82 with the same file.
     Initialzation will take a few seconds per device
     """
-    # TODO: Add option to initalize the setup with different "modes"
-    global _procs, _isinit
-    slab.Signal.set_default_samplerate(48828.125)
-    printv("Setting the default samplerate for generating sounds,"
-           "filters etc. to 48828.125 Hz")
+    global _procs
+    set_samplerate(_samplerate)
     if not _speaker_config:
         raise ValueError("Please set device to 'arc' or "
                          "'dome' before initialization!")
     printv('Initializing TDT rack.')
     RX81, RX82, RP2, ZB = None, None, None, None
+    if mode is not None:
+        if ZBus or RX81_file or RX82_file or RX8_file or RP2_file or cam:
+            raise ValueError("You cant initialize using a mode and specifying"
+                             ".rcx files at the same time!")
+        else:
+            RX81_file, RX82_file, RP2_file, ZBus, cam = _files_from_mode(mode)
     if RX8_file:  # use this file for both processors
         RX81_file, RX82_file = RX8_file, RX8_file
     if RX81_file:
@@ -69,7 +72,6 @@ def initialize_devices(ZBus=True, RX81_file=None, RX82_file=None,
         camera.init()
     proc_tuple = collections.namedtuple('TDTrack', 'ZBus RX81 RX82 RP2')
     _procs = proc_tuple(ZBus=ZB, RX81=RX81, RX82=RX82, RP2=RP2)
-    _isinit = True
 
 
 def _initialize_processor(device_type=None, rcx_file=None, index=1,
@@ -114,6 +116,40 @@ def _initialize_processor(device_type=None, rcx_file=None, index=1,
         else:
             raise ValueError(f'Failed to run {rcx_file}.')
         return RP
+
+
+def _files_from_mode(mode):
+    global _mode
+    if mode == "play_and_record":
+        RP2_file = _location.parents[0]/"rcx"/Path("rec_buf.rcx")
+        RX81_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
+        RX82_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
+        ZBus, cam = True, False
+        _mode = "play_and_record"
+    elif mode == "localization_test":
+        RP2_file = _location.parents[0] / Path("rcx/button.rcx")
+        RX81_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
+        RX82_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
+        ZBus, cam = True, True
+        _mode = "localization_test"
+    elif mode == "camera_calibration":
+        RP2_file = _location.parents[0] / Path("rcx/button.rcx")
+        RX81_file = _location.parents[0] / Path("rcx/leds.rcx")
+        RX82_file = _location.parents[0] / Path("rcx/leds.rcx")
+        ZBus, cam = True, True
+        _mode = "camera_calibration"
+    elif mode == "binaural_recording":
+        RP2_file = _location.parents[0]/"rcx"/Path("bi_rec_buf.rcx")
+        RX81_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
+        RX82_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
+        _mode = "binaural_recording"
+        ZBus, cam = True, False
+    else:
+        raise ValueError("mode % s is not a valid input! Options are: \n"
+                         "play_and_record, localization_test, \n"
+                         "camera_calibration, binaural_recording" % (mode))
+    printv("Setting mode to %s" % (mode))
+    return RX81_file, RX82_file, RP2_file, ZBus, cam
 
 
 def halt():
@@ -201,6 +237,9 @@ def set_variable(variable, value, proc='RX8s'):
 def set_samplerate(x):
     global _samplerate
     _samplerate = x
+    slab.Signal.set_default_samplerate(x)
+    printv("Setting the default samplerate for generating sounds,"
+           "filters etc. to %s Hz" % (x))
 
 
 def get_variable(variable=None, n_samples=1, proc='RX81', supress_print=False):
@@ -219,7 +258,7 @@ def get_variable(variable=None, n_samples=1, proc='RX81', supress_print=False):
         value = _procs[proc].GetTagVal(variable)
     if not supress_print:
         printv(f'Got {variable} from {_procs._fields[proc]}.')
-    if value is 0:
+    if value == 0:
         printv(f'{variable} from {_procs._fields[proc]} was returned as 0 \n'
                'this is probably an error')
     return value
@@ -399,16 +438,42 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
 
 
 # functions implementing complete procedures:
+def localization_test(sound, speakers, n_reps):
+    if not _mode == "localization_test":
+        initialize_devices(mode="localization_test")
+    if isinstance(sound, slab.sound.Sound) and sound.nchannels == 1:
+        data = sound.data.flatten()  # Not sure if flatten is needed...
+    elif isinstance(sound, np.ndarray) and sound.ndim == 1:
+        data = sound
+    else:
+        raise ValueError("Sound must be a 1D array or instance of slab.Sound!")
+    if camera._calibration is None:
+        raise ValueError("Camera must be calibrated before localization test!")
+    set_variable(variable="data", value=data, proc="RX8s")
+    speakers = speakers_from_list(speakers)
+    seq = slab.Trialsequence(speakers, n_reps)
+    response = []
+    while seq.n_remaining > 0:
+        _, ch, proc = seq.__next__()
+        set_variable(variable="chan", value=ch, proc="RX8%s" % int(proc))
+        set_variable(variable="playbuflen", value=len(sound), proc="RX8s")
+        trigger()
+        wait_to_finish_playing()
+        while not get_variable(variable="response", proc="RP2"):
+            time.sleep(0.01)
+        ele, azi = camera.get_headpose()
+        response.append([ele, azi])
+    return seq, response
+
+
 def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
                       freq_range=(200, 16000), thresh=75, factor=1.,
                       plot=False):
     global _calibration_filter
     import datetime
     printv('Starting calibration.')
-    if not _isinit:
-        initialize_devices(RP2_file=_location.parent/"rcx"/"rec_buf.rcx",
-                           RX8_file=_location.parent/"rcx"/"play_buf.rcx",
-                           connection='GB')
+    if not _mode == "play_and_record":
+        initialize_devices(mode="play_and_record")
     sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
     sig.level = _level
     recordings = []
@@ -540,7 +605,9 @@ def play_and_record(speaker_nr, sig, compensate_delay=True, binaural=False):
     Returns:
         rec: 1-D array, recorded signal
     """
-
+    if not _mode == "play_and_record":
+        raise ValueError("Setup must be initalized in 'play_and_record' mode!"
+                         "\n current mode is %s" % (_mode))
     row = speaker_from_number(speaker_nr)
     set_variable(variable="playbuflen", value=sig.nsamples, proc="RX8s")
     if compensate_delay:

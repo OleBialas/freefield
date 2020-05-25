@@ -32,7 +32,7 @@ _azi_reg = []
 _cam_type = None
 _system = None
 _pool = None
-_calibration = None
+_cal = None
 _object_pts = numpy.float32([[6.825897, 6.760612, 4.402142],
                              [1.330353, 7.122144, 6.903745],
                              [-1.330353, 7.122144, 6.903745],
@@ -169,9 +169,16 @@ def get_headpose(cams="all", convert=False, n=1):
                                columns=["ele", "azi", "cam"])
             pose = pose.append(row)
     if convert:  # convert azimuth and elevation to world coordinates
-        if _calibration is None:
+        if _cal is None:
             raise ValueError("Can't convert coordinates because camera is"
                              "not calibrated!")
+        else:
+            for cam in np.unique(pose["cam"]):
+                for angle in ["azi", "ele"]:
+                    reg = _cal[np.logical_and(
+                        _cal["cam"] == cam, _cal["angle"] == angle)]
+                    pose.loc[pose["cam"] == cam, angle] = \
+                        (pose[pose["cam"] == cam][angle]-reg["a"])/reg["b"]
         pose.insert(3, "frame", "world")
     else:
         pose.insert(3, "frame", "camera")
@@ -308,7 +315,7 @@ def calibrate_camera(targets=None, n_reps=1):
                          columns=["ele", "azi", "frame", "n"]))
     if _cam_type == "freefield":
         setup.set_variable(variable="bitmask", value=0, proc="RX8s")
-    # camera_to_world(coords)
+    camera_to_world(coords)
     return coords
 
 
@@ -317,8 +324,8 @@ def camera_to_world(coords, plot=True):
     Find linear regression for camera and world coordinates and store
     them in global variables
     """
-    global _calibration
-    _calibration = pd.DataFrame(columns=["a", "b", "cam", "angle"])
+    global _cal
+    _cal = pd.DataFrame(columns=["a", "b", "cam", "angle"])
     if plot:
         fig, ax = plt.subplots(2)
         fig.suptitle("World vs Camera Coordinates")
@@ -341,7 +348,7 @@ def camera_to_world(coords, plot=True):
                 setup.printv("The correlatio between the points' camera and"
                              "world coordinates is only %s! \n"
                              "There might be something wrong..." % (r))
-            _calibration = _calibration.append(
+            _cal = _cal.append(
                 pd.DataFrame([[a, b, cam, angle]],
                              columns=["a", "b", "cam", "angle"]))
 

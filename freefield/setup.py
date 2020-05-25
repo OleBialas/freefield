@@ -254,17 +254,13 @@ def get_variable(variable=None, n_samples=1, proc='RX81', supress_print=False):
         proc = _procs._fields.index(proc)
     if n_samples > 1:
         value = np.asarray(_procs[proc].ReadTagV(variable, 0, n_samples))
+        if value == 0:
+            printv(f'{variable} from {_procs._fields[proc]} returned 0 \n'
+                   'this is probably an error...')
     else:
         value = _procs[proc].GetTagVal(variable)
     if not supress_print:
         printv(f'Got {variable} from {_procs._fields[proc]}.')
-<<<<<<< HEAD
-    if value == 0:
-=======
-    if value != 0:
->>>>>>> 94a7de5d372be8cf1e5293fba294e00bbdabd8b2
-        printv(f'{variable} from {_procs._fields[proc]} was returned as 0 \n'
-               'this is probably an error')
     return value
 
 

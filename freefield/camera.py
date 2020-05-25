@@ -1,22 +1,17 @@
 import numpy  # for some reason numpy must be imported before PySpin
 try:
     import PySpin
-<<<<<<< HEAD
-except ImportError:
-    pass
-=======
 except ModuleNotFoundError:
     print("PySpin module required for working with FLIR cams not found! \n"
           "You can download the .whl here: \n"
           "https://www.flir.com/products/spinnaker-sdk/")
->>>>>>> 94a7de5d372be8cf1e5293fba294e00bbdabd8b2
 import cv2
 import dlib
 from imutils import face_utils
 from pathlib import Path
 from freefield import setup
 import multiprocessing
-import slab
+from slab.psychoacoustics import Trialsequence
 import time
 import matplotlib
 from scipy import stats
@@ -169,23 +164,7 @@ def get_headpose(cams="all", convert=False, n=1):
     for n in range(n):
         images = acquire_image(cams)  # take images
         for i, image in enumerate(images):
-<<<<<<< HEAD
-            e, a, _ = _pose_from_image(image)
-        ele += e
-        azi += a
-    ele /= n_average
-    azi /= n_average
-    if convert_coordinates:  # y= b * x +c
-        if len(_ele_reg) == 0 or len(_azi_reg) == 0:
-            raise ValueError(
-                "You have to do a calibration before you can convert "
-                "the headpose estimate to world coordinates!")
-        for i in range(len(_cams)):
-            ele[i] = round((_ele_reg[i][0] * ele[i] + _ele_reg[i][0]), 2)
-            azi[i] = round((_azi_reg[i][0] * azi[i] + _azi_reg[i][0]), 2)
-    return ele, azi
-=======
-            ele, azi, _ = pose_from_image(image)
+            ele, azi, _ = _pose_from_image(image)
             row = pd.DataFrame([[ele, azi, i]],
                                columns=["ele", "azi", "cam"])
             pose = pose.append(row)
@@ -193,12 +172,10 @@ def get_headpose(cams="all", convert=False, n=1):
         if _calibration is None:
             raise ValueError("Can't convert coordinates because camera is"
                              "not calibrated!")
-        # convert ele and azi for each camera to world coordinates:
         pose.insert(3, "frame", "world")
     else:
         pose.insert(3, "frame", "camera")
     return pose
->>>>>>> 94a7de5d372be8cf1e5293fba294e00bbdabd8b2
 
 
 def _pose_from_image(image, plot_arg=None):
@@ -272,7 +249,7 @@ def _pose_from_image(image, plot_arg=None):
                 "a string (save to log folder as pdf with that name)")
 
 
-def calibrate_camera(target_positions=None, n_reps=1):
+def calibrate_camera(targets=None, n_reps=1):
     """
     Calibrate camera(s) by computing the linear regression for a number of
     points in camera and world coordinates.
@@ -289,7 +266,7 @@ def calibrate_camera(target_positions=None, n_reps=1):
     used to compute the regression are also returned (mostly for debugging
     purposes).
     Attributes:
-    target_positions (list of tuples): elevation and azimuth for any number of
+    targets (list of tuples): elevation and azimuth for any number of
         points in world coordinates
     n_repeat (int): number of repetitions for each target (default = 1)
 
@@ -298,61 +275,41 @@ def calibrate_camera(target_positions=None, n_reps=1):
     # azimuth and elevation of a set of points in camera and world coordinates
     # one list for each camera
     coords = pd.DataFrame(columns=["ele", "azi", "cam", "frame", "n"])
-    if _cam_type == "web" and target_positions is None:
+    if _cam_type == "web" and targets is None:
         raise ValueError("Define target positions for calibrating webcam!")
     elif _cam_type is None:
         raise ValueError("Initialize Camera before calibration!")
+    elif _cam_type == "freefield":
+        targets = setup.all_leds()  # get the speakers that have a LED attached
     if not setup._mode == "camera_calibration":  # initialize setup
         setup.initialize_devices(mode="camera_calibration")
-        # TODO: how to set the targets for the arc ???
-        leds = setup.all_leds()  # get the speakers that have a LED attached
-        target_positions = [(l[4], l[3]) for l in leds]
-    seq = slab.psychoacoustics.Trialsequence(
-<<<<<<< HEAD
-        name="cam", n_reps=n_repeat, conditions=target_positions)
-    while seq.n_remaining > 0:
-        pos = seq.__next__()
-        world_coordinates.append(pos)
-=======
-        name="cam", n_reps=n_reps, conditions=range(len(target_positions)))
+    seq = Trialsequence(name="cam", n_reps=n_reps, conditions=targets)
     while seq.n_remaining:
-        ele, azi = target_positions[seq.__next__()]
-        coords = \
-            coords.append(pd.DataFrame([[ele, azi, "world", seq.this_n]],
-                                       columns=["ele", "azi", "frame", "n"]))
->>>>>>> 94a7de5d372be8cf1e5293fba294e00bbdabd8b2
+        target = seq.__next__()
         if _cam_type == "web":  # look at target position and press enter
+            ele, azi = target[0], target[1]
             input("point your head towards the target at elevation: %s and "
                   "azimuth %s. \n Then press enter to take an image an get "
                   "the headpose" % (ele, azi))
         elif _cam_type == "freefield":  # light LED and wait for button press
-            leds=setup.all_leds()
-            proc, bitval = leds[seq.this_trial][6], leds[seq.this_trial][5]
-            setup.printv("trial nr %s: speaker at azi: %s and ele: of %s" %
+            ele, azi = target[4], target[3]
+            proc, bitval = target[6], target[5]
+            setup.printv("trial nr %s: speaker at ele: %s and azi: of %s" %
                          (seq.this_n, ele, azi))
             setup.set_variable(variable="bitmask", value=bitval, proc=proc)
             while not setup.get_variable(variable="response", proc="RP2",
                                          supress_print=True):
                 time.sleep(0.1)  # wait untill button is pressed
-<<<<<<< HEAD
-        images = acquire_image(cams="all")  # get list containing image(s)
-        for i, image in enumerate(images):
-            ele, azi, _ = _pose_from_image(image)
-            if ele is not None and azi is not None:
-                camera_coordinates[i].append((ele, azi))
-                world_coordinates[i].append(pos)
-    setup.set_variable(variable="bitmask", value=0, proc="RX8s")
-    camera_to_world(world_coordinates, camera_coordinates)
-    return world_coordinates, camera_coordinates
-=======
         pose = get_headpose()  # get list containing image(s)
         pose.insert(4, "n", seq.this_n)
         coords = coords.append(pose)
+        coords = coords.append(
+            pd.DataFrame([[ele, azi, "world", seq.this_n]],
+                         columns=["ele", "azi", "frame", "n"]))
     if _cam_type == "freefield":
         setup.set_variable(variable="bitmask", value=0, proc="RX8s")
-    camera_to_world(coords)
+    # camera_to_world(coords)
     return coords
->>>>>>> 94a7de5d372be8cf1e5293fba294e00bbdabd8b2
 
 
 def camera_to_world(coords, plot=True):
@@ -380,7 +337,7 @@ def camera_to_world(coords, plot=True):
             x = cam_coords[cam_coords["frame"] == "world"][angle].values
             y = cam_coords[cam_coords["frame"] == "camera"][angle].values
             b, a, r, _, _ = stats.linregress(x.astype(float), y.astype(float))
-            if r < 0.8:
+            if np.abs(r) < 0.8:
                 setup.printv("The correlatio between the points' camera and"
                              "world coordinates is only %s! \n"
                              "There might be something wrong..." % (r))

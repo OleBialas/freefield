@@ -447,7 +447,7 @@ def localization_test(sound, speakers, n_reps):
         data = sound
     else:
         raise ValueError("Sound must be a 1D array or instance of slab.Sound!")
-    if camera._calibration is None:
+    if camera._cal is None:
         raise ValueError("Camera must be calibrated before localization test!")
     set_variable(variable="data", value=data, proc="RX8s")
     speakers = speakers_from_list(speakers)
@@ -605,7 +605,7 @@ def play_and_record(speaker_nr, sig, compensate_delay=True, binaural=False):
     Returns:
         rec: 1-D array, recorded signal
     """
-    if not _mode == "play_and_record":
+    if not _mode == "binaural_recording":
         raise ValueError("Setup must be initalized in 'play_and_record' mode!"
                          "\n current mode is %s" % (_mode))
     row = speaker_from_number(speaker_nr)

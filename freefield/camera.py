@@ -154,12 +154,13 @@ def acquire_image(cams="all"):
     return images
 
 
-def get_headpose(cams="all", convert=False, n=1):
+def get_headpose(cams="all", convert=False, average=True, n=1):
     """
     Acquire n images and compute headpose (elevation and azimuth). If
     convert_coordinates is True use the regression coefficients to convert
     the camera into world coordinates
     """
+    # TODO: sanity check the resulting dataframe, e.g. how big is the max diff
     pose = pd.DataFrame(columns=["ele", "azi", "cam"])
     for n in range(n):
         images = acquire_image(cams)  # take images
@@ -175,14 +176,17 @@ def get_headpose(cams="all", convert=False, n=1):
         else:
             for cam in np.unique(pose["cam"]):
                 for angle in ["azi", "ele"]:
-                    reg = _cal[np.logical_and(
-                        _cal["cam"] == cam, _cal["angle"] == angle)]
+                    reg = _cal[(_cal["cam"] == cam) & (_cal["angle"] == angle)]
                     pose.loc[pose["cam"] == cam, angle] = \
-                        (pose[pose["cam"] == cam][angle]-reg["a"])/reg["b"]
+                        (pose[pose["cam"] == cam][angle] -
+                         reg["a"].values)/reg["b"].values
         pose.insert(3, "frame", "world")
     else:
         pose.insert(3, "frame", "camera")
-    return pose
+    if average:  # only return the mean
+        return pose.ele.mean(), pose.azi.mean()
+    else:  # return the whole data frame
+        return pose
 
 
 def _pose_from_image(image, plot_arg=None):
@@ -309,10 +313,11 @@ def calibrate_camera(targets=None, n_reps=1):
                 time.sleep(0.1)  # wait untill button is pressed
         pose = get_headpose()  # get list containing image(s)
         pose.insert(4, "n", seq.this_n)
-        coords = coords.append(pose)
+        coords = coords.append(pose, ignore_index=True, sort=True)
         coords = coords.append(
             pd.DataFrame([[ele, azi, "world", seq.this_n]],
-                         columns=["ele", "azi", "frame", "n"]))
+                         columns=["ele", "azi", "frame", "n"]),
+            ignore_index=True, sort=True)
     if _cam_type == "freefield":
         setup.set_variable(variable="bitmask", value=0, proc="RX8s")
     camera_to_world(coords)
@@ -329,33 +334,42 @@ def camera_to_world(coords, plot=True):
     if plot:
         fig, ax = plt.subplots(2)
         fig.suptitle("World vs Camera Coordinates")
-    # first drop the None values
-    bads = coords[coords["ele"].isna()]["n"].values
+    # find the entries which which contain NaN for elevation and azimuth
+    bads = coords[coords["ele"].isna()].index
     for bad in bads:
-        pos = coords[coords["n"] == bad][["ele", "azi"]].values[0]
-        setup.printv("Dropping None value at elevation %s and azimuth %s"
-                     % (pos[0], pos[1]))
-        coords = coords[coords["n"] != bad]
+        row = coords.loc[bad]
+        # get the position of the target in world coordinates
+        pos = coords[np.logical_and(coords["frame"] == "world",
+                                    coords["n"] == row["n"])]
+        setup.printv("Dropping NaN entry for cam %s at elevation %s and "
+                     "azimuth %s" % (row.cam, pos.ele.values[0],
+                                     pos.azi.values[0]))
+    coords = coords.drop(bads)  # remove all NaN entires
+    # bad_n = coords.n.value_counts()[coords.n.value_counts() == 1].index
+
     for cam in pd.unique(coords["cam"].dropna()):  # calibrate each camera
-        cam_coords = \
-            coords[np.logical_or(coords["cam"] == cam, coords["cam"].isna())]
+        cam_coords = coords[coords["cam"] == cam]
+        world_coords = coords[coords['n'].isin(cam_coords['n']) &
+                              (coords["frame"] == "world")]
         # find regression coefficients for azimuth and elevation
         for i, angle in enumerate(["ele", "azi"]):
-            x = cam_coords[cam_coords["frame"] == "world"][angle].values
-            y = cam_coords[cam_coords["frame"] == "camera"][angle].values
-            b, a, r, _, _ = stats.linregress(x.astype(float), y.astype(float))
-            if np.abs(r) < 0.8:
-                setup.printv("The correlatio between the points' camera and"
+            y = cam_coords[angle].values.astype(float)
+            x = world_coords[angle].values.astype(float)
+            b, a, r, _, _ = stats.linregress(x, y)
+            if np.abs(r) < 0.85:
+                setup.printv("For cam %s %s correlation between camera and"
                              "world coordinates is only %s! \n"
-                             "There might be something wrong..." % (r))
-            _cal = _cal.append(
-                pd.DataFrame([[a, b, cam, angle]],
-                             columns=["a", "b", "cam", "angle"]))
-
+                             "There might be something wrong..."
+                             % (cam, angle, r))
+            _cal = \
+                _cal.append(pd.DataFrame([[a, b, cam, angle]],
+                                         columns=["a", "b", "cam", "angle"]),
+                            ignore_index=True)
             if plot:
-                ax[i].scatter(x, y, c="black")
-                ax[i].plot(x, x*b+a, c="black", linestyle="--")
+                ax[i].scatter(x, y)
+                ax[i].plot(x, x*b+a, linestyle="--", label=cam)
                 ax[i].set_title(angle)
+                ax[i].legend()
                 ax[i].set_xlabel("world coordinates in degree")
                 ax[i].set_ylabel("camera coordinates in degree")
         if plot:

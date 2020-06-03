@@ -254,9 +254,9 @@ def get_variable(variable=None, n_samples=1, proc='RX81', supress_print=False):
         proc = _procs._fields.index(proc)
     if n_samples > 1:
         value = np.asarray(_procs[proc].ReadTagV(variable, 0, n_samples))
-        if value == 0:
-            printv(f'{variable} from {_procs._fields[proc]} returned 0 \n'
-                   'this is probably an error...')
+        # if value == 0:
+        # printv(f'{variable} from {_procs._fields[proc]} returned 0 \n'
+        # 'this is probably an error...')
     else:
         value = _procs[proc].GetTagVal(variable)
     if not supress_print:

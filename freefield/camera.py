@@ -311,8 +311,9 @@ def calibrate_camera(targets=None, n_reps=1):
             while not setup.get_variable(variable="response", proc="RP2",
                                          supress_print=True):
                 time.sleep(0.1)  # wait untill button is pressed
-        pose = get_headpose()  # get list containing image(s)
-        pose.insert(4, "n", seq.this_n)
+        pose = get_headpose(average=False)  # get list containing image(s)
+        pose = list(pose)
+        pose.insert(4, seq.this_n)
         coords = coords.append(pose, ignore_index=True, sort=True)
         coords = coords.append(
             pd.DataFrame([[ele, azi, "world", seq.this_n]],
@@ -320,6 +321,7 @@ def calibrate_camera(targets=None, n_reps=1):
             ignore_index=True, sort=True)
     if _cam_type == "freefield":
         setup.set_variable(variable="bitmask", value=0, proc="RX8s")
+
     camera_to_world(coords)
     return coords
 

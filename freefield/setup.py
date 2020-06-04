@@ -159,6 +159,8 @@ def halt():
         if hasattr(proc, 'Halt'):
             printv(f'Halting {proc_name}.')
             proc.Halt()
+    if camera._cam_type is not None:
+        camera.halt()
 
 
 def set_speaker_config(setup='arc'):
@@ -439,6 +441,16 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
 
 # functions implementing complete procedures:
 def localization_test(sound, speakers, n_reps):
+    """
+    Run a basic localization test where the same sound is played from different
+    speakers in randomized order, without playing the same position twice in
+    a row. After every trial the presentation is paused and the listener has
+    to localize the sound source by pointing the head towards the source and
+    pressing the response button. The cameras need to be calibrated before the
+    test! After every trial the listener has to point to the middle speaker at
+    0 elevation and azimuth and press the button to iniciate the next trial.
+    """
+    # TODO: check if listener looks at fixation point before trial starts
     if not _mode == "localization_test":
         initialize_devices(mode="localization_test")
     if isinstance(sound, slab.sound.Sound) and sound.nchannels == 1:
@@ -451,7 +463,7 @@ def localization_test(sound, speakers, n_reps):
         raise ValueError("Camera must be calibrated before localization test!")
     set_variable(variable="data", value=data, proc="RX8s")
     speakers = speakers_from_list(speakers)
-    seq = slab.Trialsequence(speakers, n_reps)
+    seq = slab.Trialsequence(speakers, n_reps, kind="non-repeat")
     response = []
     while seq.n_remaining > 0:
         _, ch, proc = seq.__next__()

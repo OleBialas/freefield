@@ -359,9 +359,22 @@ def all_leds():
     '''
     Get speaker, RX8 index, and bitmask of all speakers which have a LED
     attached --> won't be necessary once all speakers have LEDs
-        '''
+    '''
     idx = np.where(_speaker_table[:, 5] == _speaker_table[:, 5])[0]
     return _speaker_table[idx]
+
+
+def shift_setup(delta_ele=0, delta_azi=0):
+    '''
+    Shift the whole speaker setup by adding delte_ele and delta_azi to the
+    coordinates of each speaker. Useful when the listeners position is changed.
+    To reverse changes reload the table by calling set_speaker_config.
+    '''
+    global _speaker_table
+    _speaker_table[:, 3] += delta_azi
+    _speaker_table[:, 4] += delta_ele
+    printv("shifting the loudspeaker array by % s degree in azimuth / n"
+           "and % s degree in elevation" % (delta_azi, delta_ele))
 
 
 def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=True):

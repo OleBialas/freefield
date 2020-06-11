@@ -394,12 +394,11 @@ def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=True):
             raise FileNotFoundError('No calibration file found.'
                                     'Please calibrate the speaker setup.')
         printv('Applying calibration.')
-        signal = _calibration_filter.channel(speaker).apply(signal)
-    proc_indices = set([1, 2])
-    other_procs = proc_indices.remove(proc)
+        signal = _calibration_filter.channel(int(speaker)).apply(signal)
     set_variable(variable='chan', value=channel, proc=proc)
-    for other in other_procs:
-        set_variable(variable='chan', value=-1, proc=other)
+    set_variable(variable="data", value=signal.data, proc=proc)
+    # set the other channel to non existant
+    set_variable(variable='chan', value=25, proc=3-proc)
 
 
 def get_headpose(n_images=10):
@@ -492,8 +491,10 @@ def localization_test(sound, speakers, n_reps):
 
 
 def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
-                      freq_range=(200, 16000), thresh=75, factor=1.,
+                      freq_range=(200, 16000), thresh=75, factor=None,
                       plot=False):
+    # Do we need a overall level normalization before frequency specific
+    # equalization
     global _calibration_filter
     import datetime
     printv('Starting calibration.')
@@ -507,7 +508,7 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
     else:  # use a subset of speakers
         speaker_list = speakers_from_list(speakers)
     for row in speaker_list:
-        rec = play_and_record(row[0], sig)
+        rec = play_and_record(row[0], sig, apply_calibration=False)
         if row[0] == target_speaker:
             target = rec
         recordings.append(rec.data)
@@ -549,10 +550,9 @@ def test_equalization(speakers="all", title="", thresh=75):
     else:  # use a subset of speakers
         speaker_list = speakers_from_list(speakers)
     for i, row in enumerate(speaker_list):
-        rec = play_and_record(row[0], sig)
+        rec = play_and_record(row[0], sig, apply_calibration=False)
         recordings.append(rec.data)
-        filt = _calibration_filter.channel(i)
-        rec = play_and_record(row[0], filt.apply(sig, compensate_shift=True))
+        rec = play_and_record(row[0], sig, apply_calibration=True)
         recordings_filt.append(rec.data)
 
     recordings_filt = slab.Sound(recordings_filt)
@@ -615,7 +615,8 @@ def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,
     return difference
 
 
-def play_and_record(speaker_nr, sig, compensate_delay=True):
+def play_and_record(speaker_nr, sig, compensate_delay=True,
+                    apply_calibration=True):
     """
     Play the signal from a speaker and return the recording. Delay compensation
     means making the buffer of the recording device n samples longer and then
@@ -638,7 +639,6 @@ def play_and_record(speaker_nr, sig, compensate_delay=True):
         raise ValueError("Setup must be initalized in 'play_and_record' for "
                          "single or 'binaural' for two channel recording!"
                          "\n current mode is %s" % (_mode))
-    row = speaker_from_number(speaker_nr)
     set_variable(variable="playbuflen", value=sig.nsamples, proc="RX8s")
     if compensate_delay:
         n_delay = get_recording_delay(play_device="RX8", rec_device="RP2")
@@ -646,8 +646,7 @@ def play_and_record(speaker_nr, sig, compensate_delay=True):
         n_delay = 0
     set_variable(variable="playbuflen", value=sig.nsamples, proc="RX8s")
     set_variable(variable="playbuflen", value=sig.nsamples+n_delay, proc="RP2")
-    set_variable(variable="data", value=sig.data, proc="RX8s")
-    set_variable('chan', value=row[0], proc=int(row[1]))  # set speaker
+    set_signal_and_speaker(sig, speaker_nr, apply_calibration)
     trigger()  # start playing and wait
     wait_to_finish_playing(proc="all")
     if binaural is False:

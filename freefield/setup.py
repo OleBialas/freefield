@@ -615,7 +615,7 @@ def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,
     return difference
 
 
-def play_and_record(speaker_nr, sig, compensate_delay=True, binaural=False):
+def play_and_record(speaker_nr, sig, compensate_delay=True):
     """
     Play the signal from a speaker and return the recording. Delay compensation
     means making the buffer of the recording device n samples longer and then
@@ -630,8 +630,13 @@ def play_and_record(speaker_nr, sig, compensate_delay=True, binaural=False):
     Returns:
         rec: 1-D array, recorded signal
     """
-    if not _mode == "binaural_recording":
-        raise ValueError("Setup must be initalized in 'play_and_record' mode!"
+    if _mode == "binaural_recording":
+        binaural = True  # 2 channel recording
+    elif _mode == "play_and_record":
+        binaural = False  # record single channle
+    else:
+        raise ValueError("Setup must be initalized in 'play_and_record' for "
+                         "single or 'binaural' for two channel recording!"
                          "\n current mode is %s" % (_mode))
     row = speaker_from_number(speaker_nr)
     set_variable(variable="playbuflen", value=sig.nsamples, proc="RX8s")

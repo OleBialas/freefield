@@ -463,7 +463,7 @@ def localization_test(sound, speakers, n_reps):
         raise ValueError("Camera must be calibrated before localization test!")
     set_variable(variable="data", value=data, proc="RX8s")
     speakers = speakers_from_list(speakers)
-    seq = slab.Trialsequence(speakers, n_reps, kind="non-repeat")
+    seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
     response = []
     while seq.n_remaining > 0:
         _, ch, proc = seq.__next__()

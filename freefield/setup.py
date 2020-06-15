@@ -14,18 +14,19 @@ else:
     print("#######You seem to not be running windows as your OS. Working with"
           "TDT devices is only supported on windows!#######")
 
-# internal variables here:
-_verbose = True
-_speaker_config = None
-_calibration_file = None
-_calibration_filter = None
-_speaker_table = None
-_procs = None
-_location = Path(__file__).resolve().parents[0]
-_samplerate = 48828.125
-_mode = None
-_print_list = []
-_level = 90
+# define global variables:
+_verbose = True  # determines if feedback is printed out
+_speaker_config = None  # either "dome" or "arc"
+_calibration_file = None  # file name of the saved calibration filters
+_calibration_filter = None  # filters for frequency equalization
+_calibration_levels = None  # calibration to equalize levels
+_speaker_table = None  # numbers and coordinates of all loudspeakers
+_procs = None  # list of active processors
+_location = Path(__file__).resolve().parents[0]  # package folder
+_samplerate = 48828.125  # default samplerate for generating sounds etc.
+_mode = None  # mode at which the setup is currently running
+_print_list = []  # last messages printed by the printv function
+_rec_tresh = 70  # treshold in dB above which recordings are not rejected
 
 
 def initialize_devices(ZBus=False, RX81_file=None, RX82_file=None,
@@ -477,6 +478,11 @@ def localization_test(sound, speakers, n_reps):
     speakers = speakers_from_list(speakers)
     seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
     response = []
+    start_stim = slab.Sound.clicktrain()
+    set_variable(variable="chan", value=1, proc="RX8s")
+    set_variable(variable="playbuflen", value=start_stim.data, proc="RX8s")
+    trigger()
+    wait_to_finish_playing()
     while seq.n_remaining > 0:
         _, ch, proc = seq.__next__()
         set_variable(variable="chan", value=ch, proc="RX8%s" % int(proc))
@@ -485,9 +491,35 @@ def localization_test(sound, speakers, n_reps):
         wait_to_finish_playing()
         while not get_variable(variable="response", proc="RP2"):
             time.sleep(0.01)
-        ele, azi = camera.get_headpose()
+        ele, azi = camera.get_headpose(convert=True, average=True)
         response.append([ele, azi])
+        while not get_variable(variable="response", proc="RP2"):
+            time.sleep(0.01)
     return seq, response
+
+
+def level_equalization(speakers="all", target_speaker=23):
+    """
+    Measure the level of each speaker's output relative to the target speaker.
+    Save the array as .npy file and write it to the _levels global variable.
+    """
+    global _calibration_levels
+    if not _mode == "play_and_record":
+        initialize_devices(mode="play_and_record")
+    sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
+    rec = []
+    if speakers == "all":  # use the whole speaker table
+        speaker_list = _speaker_table
+    else:  # use a subset of speakers
+        speaker_list = speakers_from_list(speakers)
+
+    for row in speaker_list:
+        rec.append(play_and_record(row[0], sig, apply_calibration=False))
+        if row[0] == target_speaker:
+            target = rec[-1]
+    rec = slab.Sound(rec)
+    rec.data[:, rec.level < _rec_tresh] = target.data  # overwrite "empty" recs
+    _calibration_levels = rec.level / target.level
 
 
 def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
@@ -501,7 +533,6 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
     if not _mode == "play_and_record":
         initialize_devices(mode="play_and_record")
     sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
-    sig.level = _level
     recordings = []
     if speakers == "all":  # use the whole speaker table
         speaker_list = _speaker_table
@@ -542,7 +573,6 @@ def test_equalization(speakers="all", title="", thresh=75):
     results.
     """
     sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
-    sig.level = _level
     recordings = []
     recordings_filt = []
     if speakers == "all":  # use the whole speaker table
@@ -616,7 +646,7 @@ def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,
 
 
 def play_and_record(speaker_nr, sig, compensate_delay=True,
-                    apply_calibration=True):
+                    apply_calibration=False):
     """
     Play the signal from a speaker and return the recording. Delay compensation
     means making the buffer of the recording device n samples longer and then
@@ -631,6 +661,8 @@ def play_and_record(speaker_nr, sig, compensate_delay=True,
     Returns:
         rec: 1-D array, recorded signal
     """
+    # TODO use binaural class for binaural recordings
+
     if _mode == "binaural_recording":
         binaural = True  # 2 channel recording
     elif _mode == "play_and_record":

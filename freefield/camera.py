@@ -154,7 +154,7 @@ def acquire_image(cams="all"):
     return images
 
 
-def get_headpose(cams="all", convert=False, average=True, n=1):
+def get_headpose(cams="all", convert=False, average=False, n=1):
     """
     Acquire n images and compute headpose (elevation and azimuth). If
     convert_coordinates is True use the regression coefficients to convert
@@ -184,6 +184,8 @@ def get_headpose(cams="all", convert=False, average=True, n=1):
     else:
         pose.insert(3, "frame", "camera")
     if average:  # only return the mean
+        if not convert:
+            raise ValueError("Can only average after convertig coordinates!")
         return pose.ele.mean(), pose.azi.mean()
     else:  # return the whole data frame
         return pose

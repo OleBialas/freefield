@@ -1,5 +1,6 @@
 import time
 from pathlib import Path
+from copy import deepcopy
 import collections
 import numpy as np
 import slab
@@ -26,7 +27,9 @@ _location = Path(__file__).resolve().parents[0]  # package folder
 _samplerate = 48828.125  # default samplerate for generating sounds etc.
 _mode = None  # mode at which the setup is currently running
 _print_list = []  # last messages printed by the printv function
-_rec_tresh = 70  # treshold in dB above which recordings are not rejected
+_rec_tresh = 65  # treshold in dB above which recordings are not rejected
+
+# TODO: set speakers to 0 when intializing setup??
 
 
 def initialize_devices(ZBus=False, RX81_file=None, RX82_file=None,
@@ -395,6 +398,7 @@ def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=True):
             raise FileNotFoundError('No calibration file found.'
                                     'Please calibrate the speaker setup.')
         printv('Applying calibration.')
+        signal.level *= _calibration_levels[int(speaker)]
         signal = _calibration_filter.channel(int(speaker)).apply(signal)
     set_variable(variable='chan', value=channel, proc=proc)
     set_variable(variable="data", value=signal.data, proc=proc)
@@ -498,30 +502,78 @@ def localization_test(sound, speakers, n_reps):
     return seq, response
 
 
-def level_equalization(speakers="all", target_speaker=23):
+def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
+                      freq_range=(200, 16000), plot=False, test=True):
     """
-    Measure the level of each speaker's output relative to the target speaker.
-    Save the array as .npy file and write it to the _levels global variable.
+    Equalize the loudspeaker array in two steps. First: equalize over all
+    level differences by a constant for each speaker. Second: remove spectral
+    differeces by inverse filtering.
     """
-    global _calibration_levels
+    global _calibration_filter, _calibration_levels
+    import datetime
+    printv('Starting calibration.')
     if not _mode == "play_and_record":
         initialize_devices(mode="play_and_record")
     sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
-    rec = []
     if speakers == "all":  # use the whole speaker table
         speaker_list = _speaker_table
     else:  # use a subset of speakers
         speaker_list = speakers_from_list(speakers)
+    _calibration_levels = _level_equalization(sig, speaker_list, target_speaker)
+    fbank, rec = _frequency_equalization(sig, speaker_list, target_speaker, bandwidth, freq_range)
+    if plot:  # save plot for each speaker
+        for i in range(rec.nchannels):
+            _plot_equalization(target_speaker, rec.channel(i),
+                               fbank.channel(i), i)
+    if _calibration_file.exists():
+        date = datetime.datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")
+        rename_previous = \
+            _location.parent / Path("log/"+_calibration_file.stem + date
+                                    + _calibration_file.suffix)
+        _calibration_file.rename(rename_previous)
+    fbank.save(_calibration_file)  # save as 'calibration_arc.npy' or dome.
+    _calibration_filter = slab.Filter.load(_calibration_file)
+    printv('Calibration completed.')
+    if test:
+        rec, rec_filt = test_equalization(speakers)
+        return rec, rec_filt
 
+
+def _level_equalization(sig, speaker_list, target_speaker):
+    """
+    Record the signal from each speaker in the list and return the level of each
+    speaker relative to the target speaker(target speaker must be in the list)
+    """
+    rec = []
     for row in speaker_list:
         rec.append(play_and_record(row[0], sig, apply_calibration=False))
         if row[0] == target_speaker:
             target = rec[-1]
     rec = slab.Sound(rec)
-    rec.data[:, rec.level < _rec_tresh] = target.data  # overwrite "empty" recs
-    _calibration_levels = rec.level / target.level
+    rec.data[:, rec.level < _rec_tresh] = target.data  # thresholding
+    return target.level / rec.level
 
 
+def _frequency_equalization(sig, speaker_list, target_speaker, bandwidth, freq_range):
+    """
+    play the level-equalized signal, record and compute and a bank of inverse filter
+    to equalize each speaker relative to the target one. Return filterbank and recordings
+    """
+    rec = []
+    for row in speaker_list:
+        modulated_sig = deepcopy(sig)
+        modulated_sig.level *= _calibration_levels[int(row[0])]
+        rec.append(play_and_record(row[0], modulated_sig, apply_calibration=False))
+        if row[0] == target_speaker:
+            target = rec[-1]
+    rec = slab.Sound(rec)
+    rec.data[:, rec.level < _rec_tresh] = target.data  # thresholding
+    fbank = slab.Filter.equalizing_filterbank(target=target, signal=rec, low_lim=freq_range[0],
+                                              hi_lim=freq_range[1], bandwidth=bandwidth)
+    return fbank, rec
+
+
+"""
 def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
                       freq_range=(200, 16000), thresh=75, factor=None,
                       plot=False):
@@ -565,40 +617,38 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
     fbank.save(_calibration_file)  # save as 'calibration_arc.npy' or dome.
     _calibration_filter = slab.Filter.load(_calibration_file)
     printv('Calibration completed.')
+"""
 
 
-def test_equalization(speakers="all", title="", thresh=75):
+def test_equalization(speakers="all", title=""):
     """
     play chirp with and without the equalization filter and compare the
     results.
     """
     sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
-    recordings = []
-    recordings_filt = []
+    rec, rec_filt = [], []
     if speakers == "all":  # use the whole speaker table
         speaker_list = _speaker_table
     else:  # use a subset of speakers
         speaker_list = speakers_from_list(speakers)
-    for i, row in enumerate(speaker_list):
-        rec = play_and_record(row[0], sig, apply_calibration=False)
-        recordings.append(rec.data)
-        rec = play_and_record(row[0], sig, apply_calibration=True)
-        recordings_filt.append(rec.data)
+    for row in speaker_list:
+        rec.append(play_and_record(row[0], sig, apply_calibration=False))
+        rec_filt.append(play_and_record(row[0], sig, apply_calibration=True))
 
-    recordings_filt = slab.Sound(recordings_filt)
-    recordings = slab.Sound(recordings)
-    if thresh is not None:
-        recordings.data = recordings.data[:, recordings.level > thresh]
-        recordings_filt.data = \
-            recordings_filt.data[:, recordings_filt.level > thresh]
+    rec_filt = slab.Sound(rec_filt)
+    rec = slab.Sound(rec)
+
+    rec.data = rec.data[:, rec.level > _rec_tresh]
+    rec_filt.data = rec_filt.data[:, rec_filt.level > _rec_tresh]
 
     fig, ax = plt.subplots(2, 2, sharex="col", sharey="col")
     fig.suptitle(title)
-    spectral_range(recordings, plot=ax[0, 0])
-    spectral_range(recordings_filt, plot=ax[1, 0])
-    recordings.spectrum(axes=ax[0, 1])
-    recordings_filt.spectrum(axes=ax[1, 1])
+    spectral_range(rec, plot=ax[0, 0])
+    spectral_range(rec_filt, plot=ax[1, 0])
+    rec.spectrum(axes=ax[0, 1])
+    rec_filt.spectrum(axes=ax[1, 1])
     plt.show()
+    return rec, rec_filt
 
 
 def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,

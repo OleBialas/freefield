@@ -8,6 +8,7 @@ from sys import platform
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from freefield import camera
+import pandas as pd
 
 if "win" in platform:
     import win32com.client
@@ -28,8 +29,9 @@ _samplerate = 48828.125  # default samplerate for generating sounds etc.
 _mode = None  # mode at which the setup is currently running
 _print_list = []  # last messages printed by the printv function
 _rec_tresh = 65  # treshold in dB above which recordings are not rejected
-
-# TODO: set speakers to 0 when intializing setup??
+_fix_ele = 0  # fixation points' elevation
+_fix_azi = 0  # fixation points' azimuth
+_fix_acc = 10  # accuracy for determining if subject looks at fixation point
 
 
 def initialize_devices(ZBus=False, RX81_file=None, RX82_file=None,
@@ -43,6 +45,7 @@ def initialize_devices(ZBus=False, RX81_file=None, RX82_file=None,
     Use the argument RX8_file to initialize RX81 and RX82 with the same file.
     Initialzation will take a few seconds per device
     """
+    # TODO: set speakers to 0 when intializing setup??
     global _procs
     set_samplerate(_samplerate)
     if not _speaker_config:
@@ -323,7 +326,10 @@ def speaker_from_direction(azimuth=0, elevation=0):
         '''
     row = int(np.argwhere(np.logical_and(
         _speaker_table[:, 3] == azimuth, _speaker_table[:, 4] == elevation)))
-    return _speaker_table[row, 0:3]  # returns speaker, channel, and RX8 index
+    speaker = int(_speaker_table[row, 0])
+    channel = int(_speaker_table[row, 1])
+    rx8 = int(_speaker_table[row, 2])
+    return speaker, channel, rx8, azimuth, elevation
 
 
 def speaker_from_number(speaker):
@@ -334,10 +340,9 @@ def speaker_from_number(speaker):
     row = int(np.argwhere(_speaker_table[:, 0] == speaker))
     channel = int(_speaker_table[row, 1])
     rx8 = int(_speaker_table[row, 2])
-    azimuth = int(_speaker_table[row, 3])
-    elevation = int(_speaker_table[row, 4])
-
-    return channel, rx8, azimuth, elevation
+    azimuth = _speaker_table[row, 3]
+    elevation = _speaker_table[row, 4]
+    return speaker, channel, rx8, azimuth, elevation
 
 
 def speakers_from_list(speakers):
@@ -349,6 +354,7 @@ def speakers_from_list(speakers):
         raise ValueError("speakers mut be a list!")
     if all(isinstance(x, int) for x in speakers):
         speaker_list = [speaker_from_number(x) for x in speakers]
+
     elif all(isinstance(x, tuple) for x in speakers):
         speaker_list = \
             [speaker_from_direction(x[0], x[1]) for x in speakers]
@@ -392,7 +398,7 @@ def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=True):
         speaker, channel, proc = \
             speaker_from_direction(azimuth=speaker[0], elevation=speaker[1])
     else:
-        channel, proc, azi, ele = speaker_from_number(speaker)
+        speaker, channel, proc, azimuth, elevation = speaker_from_number(speaker)
     if apply_calibration:
         if not _calibration_file.exists():
             raise FileNotFoundError('No calibration file found.'
@@ -404,13 +410,6 @@ def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=True):
     set_variable(variable="data", value=signal.data, proc=proc)
     # set the other channel to non existant
     set_variable(variable='chan', value=25, proc=3-proc)
-
-
-def get_headpose(n_images=10):
-    if camera._cam is None:
-        print("ERROR! Camera has to be initialized!")
-    x, y, z = camera.get_headpose(n_images)
-    return x, y, z
 
 
 def printv(message):
@@ -467,7 +466,6 @@ def localization_test(sound, speakers, n_reps):
     test! After every trial the listener has to point to the middle speaker at
     0 elevation and azimuth and press the button to iniciate the next trial.
     """
-    # TODO: check if listener looks at fixation point before trial starts
     if not _mode == "localization_test":
         initialize_devices(mode="localization_test")
     if isinstance(sound, slab.sound.Sound) and sound.nchannels == 1:
@@ -478,28 +476,44 @@ def localization_test(sound, speakers, n_reps):
         raise ValueError("Sound must be a 1D array or instance of slab.Sound!")
     if camera._cal is None:
         raise ValueError("Camera must be calibrated before localization test!")
-    set_variable(variable="data", value=data, proc="RX8s")
+    warning = slab.Sound.clicktrain(duration=0.4).data.flatten()
     speakers = speakers_from_list(speakers)
     seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
-    response = []
-    start_stim = slab.Sound.clicktrain()
-    set_variable(variable="chan", value=1, proc="RX8s")
-    set_variable(variable="playbuflen", value=start_stim.data, proc="RX8s")
-    trigger()
-    wait_to_finish_playing()
+    response = pd.DataFrame(columns=["ele_target", "azi_target", "ele_response", "azi_response"])
     while seq.n_remaining > 0:
-        _, ch, proc = seq.__next__()
+        _, ch, proc, azi, ele = seq.__next__()
+        trial = {"azi_target": azi, "ele_target": ele}
         set_variable(variable="chan", value=ch, proc="RX8%s" % int(proc))
+        set_variable(variable="chan", value=25, proc="RX8%s" % int(3-proc))
         set_variable(variable="playbuflen", value=len(sound), proc="RX8s")
+        set_variable(variable="data", value=data, proc="RX8s")
         trigger()
-        wait_to_finish_playing()
         while not get_variable(variable="response", proc="RP2"):
             time.sleep(0.01)
-        ele, azi = camera.get_headpose(convert=True, average=True)
-        response.append([ele, azi])
-        while not get_variable(variable="response", proc="RP2"):
-            time.sleep(0.01)
-    return seq, response
+        # change n, see how it effects deviation of headpose. Note: n=5 seems to work just fine.
+        ele, azi = camera.get_headpose(n=5, convert=True, average=True)
+        # TODO: implement success sound?
+        trial["azi_response"], trial["ele_response"] = azi, ele
+        response = response.append(trial, ignore_index=True)
+        head_in_position = 0
+        while head_in_position == 0:
+            while not get_variable(variable="response", proc="RP2"):
+                time.sleep(0.01)
+            ele, azi = camera.get_headpose(n=1, convert=True, average=True)
+            if ele is np.nan:
+                ele = 0
+            if azi is np.nan:
+                azi = 0
+            if np.abs(ele-_fix_ele) < _fix_acc and np.abs(azi-_fix_azi) < _fix_acc:
+                head_in_position = 1
+            else:
+                print(np.abs(ele-_fix_ele), np.abs(azi-_fix_azi))
+                set_variable(variable="data", value=warning, proc="RX8s")
+                set_variable(variable="chan", value=1, proc="RX81")
+                set_variable(variable="chan", value=25, proc="RX82")
+                set_variable(variable="playbuflen", value=len(warning), proc="RX8s")
+                trigger()
+    return response
 
 
 def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
@@ -571,53 +585,6 @@ def _frequency_equalization(sig, speaker_list, target_speaker, bandwidth, freq_r
     fbank = slab.Filter.equalizing_filterbank(target=target, signal=rec, low_lim=freq_range[0],
                                               hi_lim=freq_range[1], bandwidth=bandwidth)
     return fbank, rec
-
-
-"""
-def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
-                      freq_range=(200, 16000), thresh=75, factor=None,
-                      plot=False):
-    # Do we need a overall level normalization before frequency specific
-    # equalization
-    global _calibration_filter
-    import datetime
-    printv('Starting calibration.')
-    if not _mode == "play_and_record":
-        initialize_devices(mode="play_and_record")
-    sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
-    recordings = []
-    if speakers == "all":  # use the whole speaker table
-        speaker_list = _speaker_table
-    else:  # use a subset of speakers
-        speaker_list = speakers_from_list(speakers)
-    for row in speaker_list:
-        rec = play_and_record(row[0], sig, apply_calibration=False)
-        if row[0] == target_speaker:
-            target = rec
-        recordings.append(rec.data)
-    recordings = slab.Sound(recordings)
-    # level below threshold means .nothing was recorded --> set these channels
-    # equal to signal so the resulting filter will do nothing
-    recordings.data[:, recordings.level < thresh] = target.data
-    # create the equalizing filterbank:
-    fbank = slab.Filter.equalizing_filterbank(
-        target=target, signal=recordings, low_lim=freq_range[0],
-        hi_lim=freq_range[1], factor=factor, bandwidth=bandwidth)
-    if plot:  # save plot for each speaker
-        for i in range(recordings.nchannels):
-            _plot_equalization(target, recordings.channel(i),
-                               fbank.channel(i), i)
-    # save the filterbank and rename the old one
-    if _calibration_file.exists():
-        date = datetime.datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")
-        rename_previous = \
-            _location.parent / Path("log/"+_calibration_file.stem + date
-                                    + _calibration_file.suffix)
-        _calibration_file.rename(rename_previous)
-    fbank.save(_calibration_file)  # save as 'calibration_arc.npy' or dome.
-    _calibration_filter = slab.Filter.load(_calibration_file)
-    printv('Calibration completed.')
-"""
 
 
 def test_equalization(speakers="all", title=""):

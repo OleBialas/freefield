@@ -157,7 +157,7 @@ def acquire_image(cams="all"):
 def get_headpose(cams="all", convert=False, average=False, n=1):
     """
     Acquire n images and compute headpose (elevation and azimuth). If
-    convert_coordinates is True use the regression coefficients to convert
+    convert is True use the regression coefficients to convert
     the camera into world coordinates
     """
     # TODO: sanity check the resulting dataframe, e.g. how big is the max diff

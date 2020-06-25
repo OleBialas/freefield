@@ -456,7 +456,7 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
 
 
 # functions implementing complete procedures:
-def localization_test(sound, speakers, n_reps):
+def localization_test(sound, speakers, n_reps, n_images=1):
     """
     Run a basic localization test where the same sound is played from different
     speakers in randomized order, without playing the same position twice in
@@ -490,8 +490,7 @@ def localization_test(sound, speakers, n_reps):
         trigger()
         while not get_variable(variable="response", proc="RP2"):
             time.sleep(0.01)
-        # change n, see how it effects deviation of headpose. Note: n=5 seems to work just fine.
-        ele, azi = camera.get_headpose(n=5, convert=True, average=True)
+        ele, azi = camera.get_headpose(n=n_images, convert=True, average=True)
         # TODO: implement success sound?
         trial["azi_response"], trial["ele_response"] = azi, ele
         response = response.append(trial, ignore_index=True)

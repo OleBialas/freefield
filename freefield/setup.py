@@ -515,25 +515,30 @@ def localization_test(sound, speakers, n_reps, n_images=1):
     return response
 
 
-def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
-                      freq_range=(200, 16000), plot=False, test=True):
+def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10, freq=True,
+                      low_lim=200, hi_lim=16000, alpha=1.0, plot=False, test=True, exclude=None):
     """
     Equalize the loudspeaker array in two steps. First: equalize over all
     level differences by a constant for each speaker. Second: remove spectral
-    differeces by inverse filtering.
+    differeces by inverse filtering. Argument exlude can be a list of speakers that
+    will be excluded from the frequency equalization. For more details on how the
+    inverse filters are computed see the documentation of slab.Filter.equalizing_filterbank
     """
     global _calibration_filter, _calibration_levels
     import datetime
     printv('Starting calibration.')
     if not _mode == "play_and_record":
         initialize_devices(mode="play_and_record")
-    sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
+    sig = slab.Sound.chirp(duration=0.05, from_freq=low_lim, to_freq=hi_lim)
+    sig.level = 100
     if speakers == "all":  # use the whole speaker table
         speaker_list = _speaker_table
     else:  # use a subset of speakers
         speaker_list = speakers_from_list(speakers)
     _calibration_levels = _level_equalization(sig, speaker_list, target_speaker)
-    fbank, rec = _frequency_equalization(sig, speaker_list, target_speaker, bandwidth, freq_range)
+    if freq:
+        fbank, rec = _frequency_equalization(
+            sig, speaker_list, target_speaker, bandwidth, low_lim, hi_lim, alpha, exclude)
     if plot:  # save plot for each speaker
         for i in range(rec.nchannels):
             _plot_equalization(target_speaker, rec.channel(i),
@@ -548,8 +553,7 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
     _calibration_filter = slab.Filter.load(_calibration_file)
     printv('Calibration completed.')
     if test:
-        rec, rec_filt = test_equalization(speakers)
-        return rec, rec_filt
+        test_equalization(speakers)
 
 
 def _level_equalization(sig, speaker_list, target_speaker):
@@ -567,54 +571,57 @@ def _level_equalization(sig, speaker_list, target_speaker):
     return target.level / rec.level
 
 
-def _frequency_equalization(sig, speaker_list, target_speaker, bandwidth, freq_range):
+def _frequency_equalization(sig, speaker_list, target_speaker, bandwidth,
+                            low_lim, hi_lim, alpha, exclude=None):
     """
     play the level-equalized signal, record and compute and a bank of inverse filter
     to equalize each speaker relative to the target one. Return filterbank and recordings
     """
     rec = []
     for row in speaker_list:
-        modulated_sig = deepcopy(sig)
+        modulated_sig = deepcopy(sig)  # copy signal and correct for lvl difference
         modulated_sig.level *= _calibration_levels[int(row[0])]
         rec.append(play_and_record(row[0], modulated_sig, apply_calibration=False))
         if row[0] == target_speaker:
             target = rec[-1]
     rec = slab.Sound(rec)
-    rec.data[:, rec.level < _rec_tresh] = target.data  # thresholding
-    fbank = slab.Filter.equalizing_filterbank(target=target, signal=rec, low_lim=freq_range[0],
-                                              hi_lim=freq_range[1], bandwidth=bandwidth)
+    # set recordings which are below the threshold or which are from exluded speaker
+    # equal to the target so that the resulting frequency filter will be flat
+    rec.data[:, rec.level < _rec_tresh] = target.data
+    if exclude is not None:
+        for e in exclude:
+            rec.data[:, e] = target.data[:, 0]
+    fbank = slab.Filter.equalizing_filterbank(target=target, signal=rec, low_lim=low_lim,
+                                              hi_lim=hi_lim, bandwidth=bandwidth, alpha=alpha)
     return fbank, rec
 
 
-def test_equalization(speakers="all", title=""):
+def test_equalization(sig, speakers="all", max_diff=5, exclude=None):
     """
-    play chirp with and without the equalization filter and compare the
-    results.
+    Test the effectiveness of the speaker equalization
     """
-    sig = slab.Sound.chirp(duration=0.05, from_freq=50, to_freq=16000)
-    rec, rec_filt = [], []
+    fig, ax = plt.subplots(3, 2, sharex=True)
+    # recordings without, with level and with complete (level+frequency) equalization
+    rec_raw, rec_lvl_eq, rec_freq_eq = [], [], []
     if speakers == "all":  # use the whole speaker table
         speaker_list = _speaker_table
     else:  # use a subset of speakers
         speaker_list = speakers_from_list(speakers)
     for row in speaker_list:
-        rec.append(play_and_record(row[0], sig, apply_calibration=False))
-        rec_filt.append(play_and_record(row[0], sig, apply_calibration=True))
-
-    rec_filt = slab.Sound(rec_filt)
-    rec = slab.Sound(rec)
-
-    rec.data = rec.data[:, rec.level > _rec_tresh]
-    rec_filt.data = rec_filt.data[:, rec_filt.level > _rec_tresh]
-
-    fig, ax = plt.subplots(2, 2, sharex="col", sharey="col")
-    fig.suptitle(title)
-    spectral_range(rec, plot=ax[0, 0])
-    spectral_range(rec_filt, plot=ax[1, 0])
-    rec.spectrum(axes=ax[0, 1])
-    rec_filt.spectrum(axes=ax[1, 1])
+        sig2 = deepcopy(sig)
+        rec_raw.append(play_and_record(row[0], sig2))
+        sig2.level *= _calibration_levels[int(row[0])]
+        rec_lvl_eq.append(play_and_record(row[0], sig2))
+        sig2 = _calibration_filter.channel(int(row[0])).apply(sig2)
+        rec_freq_eq.append(play_and_record(row[0], sig2))
+    for i, rec in enumerate([rec_raw, rec_lvl_eq, rec_freq_eq]):
+        rec = slab.Sound(rec)
+        rec.data = rec.data[:, rec.level > _rec_tresh]
+        rec.spectrum(axes=ax[i, 0])
+        spectral_range(rec, plot=ax[i, 1], thresh=max_diff, log=False)
     plt.show()
-    return rec, rec_filt
+
+    return fig
 
 
 def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,
@@ -628,6 +635,7 @@ def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,
     across channels are computed. Can be used for example to check the
     effect of loud speaker equalization.
     """
+    # TODO: this really should be part of the slab.Sound file
     # generate ERB-spaced filterbank:
     fbank = slab.Filter.cos_filterbank(length=1000, bandwidth=bandwidth,
                                        low_lim=low_lim, hi_lim=hi_lim,

@@ -18,19 +18,18 @@ from scipy import stats
 from matplotlib import pyplot as plt
 import pandas as pd
 import numpy as np
+import urllib.request
 
 # define internal variables
 _location = Path(__file__).resolve().parents[0]
-_detector = dlib.get_frontal_face_detector()
-# check if this file exists, if not download it:
-_predictor = dlib.shape_predictor(
-    str(_location/Path("shape_predictor_68_face_landmarks.dat")))
-# regression coefficients for camera vs target coordinates for azimuth and
-# elevation. Tuple with (slope, intercept) for each camera
-_ele_reg = []
-_azi_reg = []
+_detector = None
+_predictor = None
+_imagesize = None
 _cam_type = None
+_cams = None
 _system = None
+_mtx = None
+_dist = None
 _pool = None
 _cal = None
 _object_pts = numpy.float32([[6.825897, 6.760612, 4.402142],
@@ -59,12 +58,26 @@ _reprojectsrc = numpy.float32([[10.0, 10.0, 10.0],
 
 
 def init(multiprocess=False, type="freefield"):
-    global _cams, _system, _pool, _cam_type
+    global _cams, _system, _pool, _cam_type, _detector, _predictor, _imagesize, _mtx, _dist
+
+    # initialize dlib face detection and landmark fitting:
+    _detector = dlib.get_frontal_face_detector()
+    if not (_location/Path("shape_predictor_68_face_landmarks.dat")).exists():
+        print("could not find the file containing the face landmarks!\n"
+              "i will download it for you, this may take a moment...")
+        filedata = urllib.request.urlopen("https: // media.githubusercontent.com/media/OleBialas/freefield_toolbox"
+                                          "/master/freefield/shape_predictor_68_face_landmarks.dat")
+        datatowrite = filedata.read()
+        with open(_location/Path("shape_predictor_68_face_landmarks.dat", "wb")) as file:
+            file.write(datatowrite)
+        print("done")
+    _predictor = dlib.shape_predictor(
+        str(_location/Path("shape_predictor_68_face_landmarks.dat")))
+
     _cam_type = type.lower()
     if _cam_type == "freefield":  # Use FLIR cameras
         _system = PySpin.System.GetInstance()  # get reference to system object
         _cams = _system.GetCameras()   # get list of _cameras from the system
-        # initializing the _camera:
         num_cameras = _cams.GetSize()
         if num_cameras == 0:    # Finish if there are no cameras
             _cams.Clear()  # Clear camera list before releasing system
@@ -87,6 +100,14 @@ def init(multiprocess=False, type="freefield"):
         setup.printv("initialized %s webcams(s)" % (len(_cams)))
     else:
         raise ValueError("type must be either 'freefield' or 'web'")
+    # get a single image to get the size and estimate camera coefficients
+    _imagesize = acquire_image(cams=0, n_images=1).shape
+    focal_length, center = _imagesize[1], (_imagesize[1]/2, _imagesize[0]/2)
+    _mtx = numpy.array(
+        [[focal_length, 0, center[0]],
+         [0, focal_length, center[1]],
+         [0, 0, 1]], dtype="double")
+    _dist = numpy.zeros((4, 1))  # assuming no lens distortion
 
     if multiprocess:
         n_cores = multiprocessing.cpu_count()
@@ -94,7 +115,7 @@ def init(multiprocess=False, type="freefield"):
         setup.printv("using multiprocessing with %s cores" % (n_cores))
 
 
-def acquire_image(cams="all"):
+def acquire_image(cams="all", n_images=1):
     """
     acquire an image from a camera. The camera at the index given by cam
     idx in the camera list _cams is used. If only one camera is being used
@@ -110,51 +131,56 @@ def acquire_image(cams="all"):
         raise ValueError("cams must be int, list of ints or 'all'!")
     if _cam_type is None:
         raise ValueError("Cameras must be initialized before acquisition")
-    images = []  # pre allocate memory space to make faster?
-    for cam in cams:
-        if _cam_type == "freefield":
-            node_acquisition_mode = PySpin.CEnumerationPtr(
-                cam.GetNodeMap().GetNode('AcquisitionMode'))
-            if (not PySpin.IsAvailable(node_acquisition_mode) or
-                    not PySpin.IsWritable(node_acquisition_mode)):
-                raise ValueError(
-                    'Unable to set acquisition to continuous, aborting...')
-            node_acquisition_mode_continuous = \
-                node_acquisition_mode.GetEntryByName('Continuous')
-            if (not PySpin.IsAvailable(node_acquisition_mode_continuous) or
-                    not PySpin.IsReadable(
-                    node_acquisition_mode_continuous)):
-                raise ValueError(
-                    'Unable to set acquisition to continuous, aborting...')
-            acquisition_mode_continuous = \
-                node_acquisition_mode_continuous.GetValue()
-            node_acquisition_mode.SetIntValue(acquisition_mode_continuous)
-            cam.BeginAcquisition()
+    if _imagesize is not None:  # ignore this when initialising to take a single image to determine the size
+        image_data = np.zeros((_imagesize)+(n_images, len(cams)), dtype="uint8")
+    for i_im in range(n_images):
+        for i_cam, cam in enumerate(cams):
+            if _cam_type == "freefield":
+                node_acquisition_mode = PySpin.CEnumerationPtr(
+                    cam.GetNodeMap().GetNode('AcquisitionMode'))
+                if (not PySpin.IsAvailable(node_acquisition_mode) or
+                        not PySpin.IsWritable(node_acquisition_mode)):
+                    raise ValueError(
+                        'Unable to set acquisition to continuous, aborting...')
+                node_acquisition_mode_continuous = node_acquisition_mode.GetEntryByName(
+                    'Continuous')
+                if (not PySpin.IsAvailable(node_acquisition_mode_continuous) or
+                        not PySpin.IsReadable(
+                        node_acquisition_mode_continuous)):
+                    raise ValueError(
+                        'Unable to set acquisition to continuous, aborting...')
+                acquisition_mode_continuous = node_acquisition_mode_continuous.GetValue()
+                node_acquisition_mode.SetIntValue(acquisition_mode_continuous)
+                cam.BeginAcquisition()
 
-            image_result = cam.GetNextImage()
-            if image_result.IsIncomplete():
-                raise ValueError('Image incomplete: image status %d ...'
-                                 % image_result.GetImageStatus())
-            image = image_result.Convert(
-                PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
-            image = image.GetNDArray()
-            image_result.Release()
-            cam.EndAcquisition()
+                image_result = cam.GetNextImage()
+                if image_result.IsIncomplete():
+                    raise ValueError('Image incomplete: image status %d ...'
+                                     % image_result.GetImageStatus())
+                image = image_result.Convert(
+                    PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
+                image = image.GetNDArray()
+                image_result.Release()
 
-        elif _cam_type == "web":
-            # The webcam takes several pictures and reading only advances
-            # the buffer one step at a time, thus grab all images and only
-            # retrieve the latest one
-            for i in range(cv2.CAP_PROP_FRAME_COUNT):
-                cam.grab()
-            ret, image = cam.retrieve()
-            if ret is False:
-                setup.printv("could not acquire image, returning None...")
-        images.append(image)
-    return images
+            elif _cam_type == "web":
+                # The webcam takes several pictures and reading only advances
+                # the buffer one step at a time, thus grab all images and only
+                # retrieve the latest one
+                for i in range(cv2.CAP_PROP_FRAME_COUNT):
+                    cam.grab()
+                ret, image = cam.retrieve()
+                if ret is False:
+                    setup.printv("could not acquire image, returning None...")
+            if _imagesize is not None:
+                image_data[:, :, :, i_im, i_cam] = image
+            else:
+                image_data = image
+    if _cam_type == "freefield":
+        [cam.EndAcquisition() for cam in _cams]
+    return image_data
 
 
-def get_headpose(cams="all", convert=False, average=False, n=1):
+def get_headpose(cams="all", convert=False, average=False, n_images=1):
     """
     Acquire n images and compute headpose (elevation and azimuth). If
     convert is True use the regression coefficients to convert
@@ -162,11 +188,12 @@ def get_headpose(cams="all", convert=False, average=False, n=1):
     """
     # TODO: sanity check the resulting dataframe, e.g. how big is the max diff
     pose = pd.DataFrame(columns=["ele", "azi", "cam"])
-    for n in range(n):
-        images = acquire_image(cams)  # take images
-        for i, image in enumerate(images):
+    images = acquire_image(cams, n_images)  # take images
+    for i_cam in range(images.shape[4]):
+        for i_image in range(images.shape[3]):
+            image = images[:, :, :, i_image, i_cam]
             ele, azi, _ = _pose_from_image(image)
-            row = pd.DataFrame([[ele, azi, i]],
+            row = pd.DataFrame([[ele, azi, i_cam]],
                                columns=["ele", "azi", "cam"])
             pose = pose.append(row)
     if convert:  # convert azimuth and elevation to world coordinates
@@ -177,9 +204,8 @@ def get_headpose(cams="all", convert=False, average=False, n=1):
             for cam in np.unique(pose["cam"]):
                 for angle in ["azi", "ele"]:
                     reg = _cal[(_cal["cam"] == cam) & (_cal["angle"] == angle)]
-                    pose.loc[pose["cam"] == cam, angle] = \
-                        (pose[pose["cam"] == cam][angle] -
-                         reg["a"].values)/reg["b"].values
+                    pose.loc[pose["cam"] == cam, angle] = (pose[pose["cam"] == cam][angle] -
+                                                           reg["a"].values)/reg["b"].values
         pose.insert(3, "frame", "world")
     else:
         pose.insert(3, "frame", "camera")
@@ -199,17 +225,7 @@ def _pose_from_image(image, plot_arg=None):
     translation vector, camera matrix , and distortion are returned. This is
     nesseccary to plot the image with the computed headpose.
     """
-    # approximate camera matrix:
-    focal_length = image.shape[1]
-    center = (image.shape[1]/2, image.shape[0]/2)
-    mtx = numpy.array(
-        [[focal_length, 0, center[0]],
-         [0, focal_length, center[1]],
-         [0, 0, 1]], dtype="double")
-    dist = numpy.zeros((4, 1))  # assuming no lens distortion
-
-    # Get corresponding 2D points in the image:
-    face_rects = _detector(image, 0)
+    face_rects = _detector(image, 0)  # find the face
     if not face_rects:
         setup.printv("Could not recognize a face in the image, returning none")
         return None, None, None
@@ -220,8 +236,7 @@ def _pose_from_image(image, plot_arg=None):
                                shape[31], shape[35], shape[48], shape[54],
                                shape[57], shape[8]])
     # estimate the translation and rotation coefficients:
-    success, rotation_vec, translation_vec = \
-        cv2.solvePnP(_object_pts, image_pts, mtx, dist)
+    success, rotation_vec, translation_vec = cv2.solvePnP(_object_pts, image_pts, _mtx, _dist)
     # get the angles out of the transformation matrix:
     rotation_mat, _ = cv2.Rodrigues(rotation_vec)
     pose_mat = cv2.hconcat((rotation_mat, translation_vec))
@@ -232,7 +247,7 @@ def _pose_from_image(image, plot_arg=None):
         return angles[0, 0], angles[1, 0], angles[2, 0]
     else:
         reprojectdst, _ = cv2.projectPoints(_reprojectsrc, rotation_vec,
-                                            translation_vec, mtx, dist)
+                                            translation_vec, _mtx, _dist)
         reprojectdst = tuple(map(tuple, reprojectdst.reshape(8, 2)))
 
         for (x, y) in shape:
@@ -364,10 +379,9 @@ def camera_to_world(coords, plot=True):
                              "world coordinates is only %s! \n"
                              "There might be something wrong..."
                              % (cam, angle, r))
-            _cal = \
-                _cal.append(pd.DataFrame([[a, b, cam, angle]],
-                                         columns=["a", "b", "cam", "angle"]),
-                            ignore_index=True)
+            _cal = _cal.append(pd.DataFrame([[a, b, cam, angle]],
+                                            columns=["a", "b", "cam", "angle"]),
+                               ignore_index=True)
             if plot:
                 ax[i].scatter(x, y)
                 ax[i].plot(x, x*b+a, linestyle="--", label=cam)

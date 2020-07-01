@@ -480,6 +480,16 @@ def localization_test(sound, speakers, n_reps, n_images=1):
     speakers = speakers_from_list(speakers)
     seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
     response = pd.DataFrame(columns=["ele_target", "azi_target", "ele_response", "azi_response"])
+    start = slab.Sound.read(
+        "C:/Projects/EEG_Elevation_Max/wav_files/localization_test_start.wav")
+    start = start.channel(0)
+    set_variable(variable="data", value=start.data, proc="RX8s")
+    set_variable(variable="playbuflen", value=len(start), proc="RX8s")
+    set_variable(variable="chan", value=1, proc="RX8s")
+    trigger()
+    wait_to_finish_playing()
+    while not get_variable(variable="response", proc="RP2"):
+        time.sleep(0.01)
     while seq.n_remaining > 0:
         _, ch, proc, azi, ele = seq.__next__()
         trial = {"azi_target": azi, "ele_target": ele}

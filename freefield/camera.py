@@ -156,6 +156,7 @@ def acquire_image(cams="all", n_images=1):
     for i_im in range(n_images):
         for i_cam, cam in enumerate(cams):
             if _cam_type == "freefield":
+                time.sleep(0.01)
                 image_result = cam.GetNextImage()
                 if image_result.IsIncomplete():
                     raise ValueError('Image incomplete: image status %d ...'

@@ -101,7 +101,7 @@ def init(multiprocess=False, type="freefield"):
     else:
         raise ValueError("type must be either 'freefield' or 'web'")
     # get a single image to get the size and estimate camera coefficients
-    _imagesize = acquire_image(cams=0, n_images=1).shape
+    _imagesize = acquire_image(cams=0, n_images=1).shape[0:2]
     focal_length, center = _imagesize[1], (_imagesize[1]/2, _imagesize[0]/2)
     _mtx = numpy.array(
         [[focal_length, 0, center[0]],
@@ -133,8 +133,9 @@ def acquire_image(cams="all", n_images=1):
         raise ValueError("Cameras must be initialized before acquisition")
     if _imagesize is not None:  # ignore this when initialising to take a single image to determine the size
         image_data = np.zeros((_imagesize)+(n_images, len(cams)), dtype="uint8")
-    for i_im in range(n_images):
-        for i_cam, cam in enumerate(cams):
+
+    if _cam_type == "freefield":  # start the cameras
+        for cam in cams:
             if _cam_type == "freefield":
                 node_acquisition_mode = PySpin.CEnumerationPtr(
                     cam.GetNodeMap().GetNode('AcquisitionMode'))
@@ -152,7 +153,9 @@ def acquire_image(cams="all", n_images=1):
                 acquisition_mode_continuous = node_acquisition_mode_continuous.GetValue()
                 node_acquisition_mode.SetIntValue(acquisition_mode_continuous)
                 cam.BeginAcquisition()
-
+    for i_im in range(n_images):
+        for i_cam, cam in enumerate(cams):
+            if _cam_type == "freefield":
                 image_result = cam.GetNextImage()
                 if image_result.IsIncomplete():
                     raise ValueError('Image incomplete: image status %d ...'
@@ -172,11 +175,11 @@ def acquire_image(cams="all", n_images=1):
                 if ret is False:
                     setup.printv("could not acquire image, returning None...")
             if _imagesize is not None:
-                image_data[:, :, :, i_im, i_cam] = image
+                image_data[:, :, i_im, i_cam] = image
             else:
                 image_data = image
     if _cam_type == "freefield":
-        [cam.EndAcquisition() for cam in _cams]
+        [cam.EndAcquisition() for cam in cams]
     return image_data
 
 
@@ -189,9 +192,9 @@ def get_headpose(cams="all", convert=False, average=False, n_images=1):
     # TODO: sanity check the resulting dataframe, e.g. how big is the max diff
     pose = pd.DataFrame(columns=["ele", "azi", "cam"])
     images = acquire_image(cams, n_images)  # take images
-    for i_cam in range(images.shape[4]):
-        for i_image in range(images.shape[3]):
-            image = images[:, :, :, i_image, i_cam]
+    for i_cam in range(images.shape[3]):
+        for i_image in range(images.shape[2]):
+            image = images[:, :, i_image, i_cam]
             ele, azi, _ = _pose_from_image(image)
             row = pd.DataFrame([[ele, azi, i_cam]],
                                columns=["ele", "azi", "cam"])

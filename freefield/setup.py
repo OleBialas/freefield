@@ -500,7 +500,7 @@ def localization_test(sound, speakers, n_reps, n_images=1):
         trigger()
         while not get_variable(variable="response", proc="RP2"):
             time.sleep(0.01)
-        ele, azi = camera.get_headpose(n=n_images, convert=True, average=True)
+        ele, azi = camera.get_headpose(n_images=n_images, convert=True, average=True)
         # TODO: implement success sound?
         trial["azi_response"], trial["ele_response"] = azi, ele
         response = response.append(trial, ignore_index=True)
@@ -508,7 +508,7 @@ def localization_test(sound, speakers, n_reps, n_images=1):
         while head_in_position == 0:
             while not get_variable(variable="response", proc="RP2"):
                 time.sleep(0.01)
-            ele, azi = camera.get_headpose(n=1, convert=True, average=True)
+            ele, azi = camera.get_headpose(n_images=1, convert=True, average=True)
             if ele is np.nan:
                 ele = 0
             if azi is np.nan:

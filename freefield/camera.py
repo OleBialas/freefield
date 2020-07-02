@@ -102,13 +102,6 @@ def init(multiprocess=False, type="freefield"):
         raise ValueError("type must be either 'freefield' or 'web'")
     # get a single image to get the size and estimate camera coefficients
     _imagesize = acquire_image(cams=0, n_images=1).shape[0:2]
-    focal_length, center = _imagesize[1], (_imagesize[1]/2, _imagesize[0]/2)
-    _mtx = numpy.array(
-        [[focal_length, 0, center[0]],
-         [0, focal_length, center[1]],
-         [0, 0, 1]], dtype="double")
-    _dist = numpy.zeros((4, 1))  # assuming no lens distortion
-
     if multiprocess:
         n_cores = multiprocessing.cpu_count()
         _pool = multiprocessing.Pool(processes=n_cores)
@@ -182,6 +175,37 @@ def acquire_image(cams="all", n_images=1):
     if _cam_type == "freefield":
         [cam.EndAcquisition() for cam in cams]
     return image_data
+
+
+def set_imagesize(height, width):
+    global _imagesize
+    for cam in _cams:
+        nodemap = cam.GetNodeMap()  # get nodemap
+        # set image width:
+        node_width = PySpin.CIntegerPtr(nodemap.GetNode('Width'))
+        if PySpin.IsAvailable(node_width) and PySpin.IsWritable(node_width):
+            if width > node_width.GetMax():
+                setup.printv("Can not set width to %s because maximum is %s" %
+                             (width, node_width.GetMax()))
+            else:
+                node_width.SetValue(width)
+                imwidth = width
+                setup.printv("set width to %s" % (width))
+        else:
+            print('Width not available...')
+        # set image height:
+        node_height = PySpin.CIntegerPtr(nodemap.GetNode('Height'))
+        if PySpin.IsAvailable(node_height) and PySpin.IsWritable(node_height):
+            if height > node_height.GetMax():
+                setup.printv("Can not set height to %s because maximum is %s" %
+                             (height, node_height.GetMax()))
+            else:
+                node_height.SetValue(height)
+                imheight = height
+                setup.printv("set height to %s" % (height))
+        else:
+            print('Height not available...')
+        _imagesize = (imheight, imwidth)
 
 
 def get_headpose(cams="all", convert=False, average=False, n_images=1):

@@ -10,7 +10,7 @@ import dlib
 from imutils import face_utils
 from pathlib import Path
 from freefield import setup
-import multiprocessing
+import PIL
 from slab.psychoacoustics import Trialsequence
 import time
 import matplotlib
@@ -28,9 +28,6 @@ _imagesize = None
 _cam_type = None
 _cams = None
 _system = None
-_mtx = None
-_dist = None
-_pool = None
 _cal = None
 _object_pts = numpy.float32([[6.825897, 6.760612, 4.402142],
                              [1.330353, 7.122144, 6.903745],
@@ -58,7 +55,7 @@ _reprojectsrc = numpy.float32([[10.0, 10.0, 10.0],
 
 
 def init(multiprocess=False, type="freefield"):
-    global _cams, _system, _pool, _cam_type, _detector, _predictor, _imagesize, _mtx, _dist
+    global _cams, _system, _cam_type, _detector, _predictor, _imagesize
 
     # initialize dlib face detection and landmark fitting:
     _detector = dlib.get_frontal_face_detector()
@@ -102,10 +99,6 @@ def init(multiprocess=False, type="freefield"):
         raise ValueError("type must be either 'freefield' or 'web'")
     # get a single image to get the size and estimate camera coefficients
     _imagesize = acquire_image(cams=0, n_images=1).shape[0:2]
-    if multiprocess:
-        n_cores = multiprocessing.cpu_count()
-        _pool = multiprocessing.Pool(processes=n_cores)
-        setup.printv("using multiprocessing with %s cores" % (n_cores))
 
 
 def acquire_image(cams="all", n_images=1):
@@ -126,7 +119,6 @@ def acquire_image(cams="all", n_images=1):
         raise ValueError("Cameras must be initialized before acquisition")
     if _imagesize is not None:  # ignore this when initialising to take a single image to determine the size
         image_data = np.zeros((_imagesize)+(n_images, len(cams)), dtype="uint8")
-
     if _cam_type == "freefield":  # start the cameras
         for cam in cams:
             if _cam_type == "freefield":
@@ -208,19 +200,24 @@ def set_imagesize(height, width):
         _imagesize = (imheight, imwidth)
 
 
-def get_headpose(cams="all", convert=False, average=False, n_images=1):
+def get_headpose(cams="all", convert=False, average=False, n_images=1, resolution=1):
     """
     Acquire n images and compute headpose (elevation and azimuth). If
     convert is True use the regression coefficients to convert
     the camera into world coordinates
     """
     # TODO: sanity check the resulting dataframe, e.g. how big is the max diff
+    # TODO: downscaling images after recording should be replaced with setting camera resolution
+    if resolution > 1:
+        raise ValueError("Parameter 'resolution' must be <= 1!")
     pose = pd.DataFrame(columns=["ele", "azi", "cam"])
     images = acquire_image(cams, n_images)  # take images
     for i_cam in range(images.shape[3]):
         for i_image in range(images.shape[2]):
-            image = images[:, :, i_image, i_cam]
-            ele, azi, _ = _pose_from_image(image)
+            image = PIL.Image.fromarray(images[:, :, i_image, i_cam])
+            width, height = int(_imagesize[1]*resolution), int(_imagesize[0]*resolution)
+            image = image.resize((width, height), PIL.Image.ANTIALIAS)
+            ele, azi, _ = _pose_from_image(numpy.asarray(image))
             row = pd.DataFrame([[ele, azi, i_cam]],
                                columns=["ele", "azi", "cam"])
             pose = pose.append(row)
@@ -253,6 +250,12 @@ def _pose_from_image(image, plot_arg=None):
     translation vector, camera matrix , and distortion are returned. This is
     nesseccary to plot the image with the computed headpose.
     """
+    focal_length, center = image.shape[1], (image.shape[1]/2, image.shape[0]/2)
+    mtx = numpy.array(
+        [[focal_length, 0, center[0]],
+         [0, focal_length, center[1]],
+         [0, 0, 1]], dtype="double")
+    dist = numpy.zeros((4, 1))  # assuming no lens distortion
     face_rects = _detector(image, 0)  # find the face
     if not face_rects:
         setup.printv("Could not recognize a face in the image, returning none")
@@ -264,7 +267,7 @@ def _pose_from_image(image, plot_arg=None):
                                shape[31], shape[35], shape[48], shape[54],
                                shape[57], shape[8]])
     # estimate the translation and rotation coefficients:
-    success, rotation_vec, translation_vec = cv2.solvePnP(_object_pts, image_pts, _mtx, _dist)
+    success, rotation_vec, translation_vec = cv2.solvePnP(_object_pts, image_pts, mtx, dist)
     # get the angles out of the transformation matrix:
     rotation_mat, _ = cv2.Rodrigues(rotation_vec)
     pose_mat = cv2.hconcat((rotation_mat, translation_vec))
@@ -275,7 +278,7 @@ def _pose_from_image(image, plot_arg=None):
         return angles[0, 0], angles[1, 0], angles[2, 0]
     else:
         reprojectdst, _ = cv2.projectPoints(_reprojectsrc, rotation_vec,
-                                            translation_vec, _mtx, _dist)
+                                            translation_vec, mtx, dist)
         reprojectdst = tuple(map(tuple, reprojectdst.reshape(8, 2)))
 
         for (x, y) in shape:
@@ -305,7 +308,7 @@ def _pose_from_image(image, plot_arg=None):
                 "a string (save to log folder as pdf with that name)")
 
 
-def calibrate_camera(targets=None, n_reps=1):
+def calibrate_camera(targets=None, n_reps=1, n_images=5):
     """
     Calibrate camera(s) by computing the linear regression for a number of
     points in camera and world coordinates.
@@ -356,7 +359,7 @@ def calibrate_camera(targets=None, n_reps=1):
             while not setup.get_variable(variable="response", proc="RP2",
                                          supress_print=True):
                 time.sleep(0.1)  # wait untill button is pressed
-        pose = get_headpose(average=False, convert=False)
+        pose = get_headpose(average=False, convert=False, n_images=n_images)
         pose.insert(4, "n", seq.this_n)
         coords = coords.append(pose, ignore_index=True, sort=True)
         coords = coords.append(
@@ -391,8 +394,6 @@ def camera_to_world(coords, plot=True):
                      "azimuth %s" % (row.cam, pos.ele.values[0],
                                      pos.azi.values[0]))
     coords = coords.drop(bads)  # remove all NaN entires
-    # bad_n = coords.n.value_counts()[coords.n.value_counts() == 1].index
-
     for cam in pd.unique(coords["cam"].dropna()):  # calibrate each camera
         cam_coords = coords[coords["cam"] == cam]
         world_coords = coords[coords['n'].isin(cam_coords['n']) &
@@ -417,8 +418,8 @@ def camera_to_world(coords, plot=True):
                 ax[i].legend()
                 ax[i].set_xlabel("world coordinates in degree")
                 ax[i].set_ylabel("camera coordinates in degree")
-        if plot:
-            plt.show()
+    if plot:
+        plt.show()
 
 
 def halt():

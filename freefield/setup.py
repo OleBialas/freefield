@@ -19,9 +19,10 @@ else:
 # define global variables:
 _verbose = True  # determines if feedback is printed out
 _speaker_config = None  # either "dome" or "arc"
-_calibration_file = None  # file name of the saved calibration filters
-_calibration_filter = None  # filters for frequency equalization
-_calibration_levels = None  # calibration to equalize levels
+_freq_calibration_file = None  # file name of the saved calibration filters
+_lvl_calibration_file = None  # file name of the saved level calibration
+_calibration_freqs = None  # filters for frequency equalization
+_calibration_lvls = None  # calibration to equalize levels
 _speaker_table = None  # numbers and coordinates of all loudspeakers
 _procs = None  # list of active processors
 _location = Path(__file__).resolve().parents[0]  # package folder
@@ -172,15 +173,18 @@ def halt():
 
 def set_speaker_config(setup='arc'):
     'Set the freefield setup to use (arc or dome).'
-    global _speaker_config, _calibration_filter,\
-        _speaker_table, _calibration_file
+    global _speaker_config, _calibration_freqs, _calibration_lvls, \
+        _speaker_table, _freq_calibration_file, _lvl_calibration_file
     if setup == 'arc':
         _speaker_config = 'arc'
-        _calibration_file = _location / Path('calibration_filter_arc.npy')
+        _freq_calibration_file = _location / Path('frequency_calibration_arc.npy')
+        _lvl_calibration_file = _location / Path('level_calibration_arc.npy')
+
         table_file = _location / Path('speakertable_arc.txt')
     elif setup == 'dome':
         _speaker_config = 'dome'
-        _calibration_file = _location / Path('calibration_filter_dome.npy')
+        _freq_calibration_file = _location / Path('frequency_calibration_dome.npy')
+        _lvl_calibration_file = _location / Path('level_calibration_dome.npy')
         table_file = _location / Path('speakertable_dome.txt')
     else:
         raise ValueError("Unknown device! Use 'arc' or 'dome'.")
@@ -192,11 +196,16 @@ def set_speaker_config(setup='arc'):
     idx = np.where(_speaker_table == -999.)
     _speaker_table[idx[0], idx[1]] = None  # change the placeholder -999 to NaN
     printv('Speaker table loaded.')
-    if _calibration_file.exists():
-        _calibration_filter = slab.Filter.load(_calibration_file)
-        printv('Calibration filters loaded.')
+    if _freq_calibration_file.exists():
+        _calibration_freqs = slab.Filter.load(_freq_calibration_file)
+        printv('Frequency-calibration filters loaded.')
     else:
-        printv('Setup not calibrated.')
+        printv('Setup not frequency-calibrated...')
+    if _lvl_calibration_file.exists():
+        _calibration_lvls = np.load(_lvl_calibration_file)
+        printv('Level-calibration loaded.')
+    else:
+        printv('Setup not level-calibrated...')
 
 
 def set_variable(variable, value, proc='RX8s'):
@@ -400,12 +409,12 @@ def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=True):
     else:
         speaker, channel, proc, azimuth, elevation = speaker_from_number(speaker)
     if apply_calibration:
-        if not _calibration_file.exists():
+        if not _freq_calibration_file.exists():
             raise FileNotFoundError('No calibration file found.'
                                     'Please calibrate the speaker setup.')
         printv('Applying calibration.')
-        signal.level *= _calibration_levels[int(speaker)]
-        signal = _calibration_filter.channel(int(speaker)).apply(signal)
+        signal.level *= _calibration_lvls[int(speaker)]
+        signal = _calibration_freqs.channel(int(speaker)).apply(signal)
     set_variable(variable='chan', value=channel, proc=proc)
     set_variable(variable="data", value=signal.data, proc=proc)
     # set the other channel to non existant
@@ -525,7 +534,7 @@ def localization_test(sound, speakers, n_reps, n_images=1):
     return response
 
 
-def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10, freq=True,
+def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
                       low_lim=200, hi_lim=16000, alpha=1.0, plot=False, test=True, exclude=None):
     """
     Equalize the loudspeaker array in two steps. First: equalize over all
@@ -534,33 +543,40 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10, freq=Tr
     will be excluded from the frequency equalization. For more details on how the
     inverse filters are computed see the documentation of slab.Filter.equalizing_filterbank
     """
-    global _calibration_filter, _calibration_levels
+    global _calibration_freqs, _calibration_lvls
     import datetime
     printv('Starting calibration.')
     if not _mode == "play_and_record":
         initialize_devices(mode="play_and_record")
     sig = slab.Sound.chirp(duration=0.05, from_freq=low_lim, to_freq=hi_lim)
-    sig.level = 100
+    sig.level = 95
     if speakers == "all":  # use the whole speaker table
         speaker_list = _speaker_table
     else:  # use a subset of speakers
         speaker_list = speakers_from_list(speakers)
-    _calibration_levels = _level_equalization(sig, speaker_list, target_speaker)
-    if freq:
-        fbank, rec = _frequency_equalization(
-            sig, speaker_list, target_speaker, bandwidth, low_lim, hi_lim, alpha, exclude)
+    _calibration_lvls = _level_equalization(sig, speaker_list, target_speaker)
+    fbank, rec = _frequency_equalization(
+        sig, speaker_list, target_speaker, bandwidth, low_lim, hi_lim, alpha, exclude)
     if plot:  # save plot for each speaker
         for i in range(rec.nchannels):
             _plot_equalization(target_speaker, rec.channel(i),
                                fbank.channel(i), i)
-    if _calibration_file.exists():
+
+    if _freq_calibration_file.exists():
         date = datetime.datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")
         rename_previous = \
-            _location.parent / Path("log/"+_calibration_file.stem + date
-                                    + _calibration_file.suffix)
-        _calibration_file.rename(rename_previous)
-    fbank.save(_calibration_file)  # save as 'calibration_arc.npy' or dome.
-    _calibration_filter = slab.Filter.load(_calibration_file)
+            _location.parent / Path("log/"+_freq_calibration_file.stem + date
+                                    + _freq_calibration_file.suffix)
+        _freq_calibration_file.rename(rename_previous)
+
+    if _lvl_calibration_file.exists():
+        date = datetime.datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")
+        rename_previous = \
+            _location.parent / Path("log/"+_lvl_calibration_file.stem + date
+                                    + _lvl_calibration_file.suffix)
+        _lvl_calibration_file.rename(rename_previous)
+    np.save(_lvl_calibration_file, _calibration_lvls)
+    fbank.save(_freq_calibration_file)  # save as 'calibration_arc.npy' or dome.
     printv('Calibration completed.')
     if test:
         test_equalization(speakers)
@@ -590,7 +606,7 @@ def _frequency_equalization(sig, speaker_list, target_speaker, bandwidth,
     rec = []
     for row in speaker_list:
         modulated_sig = deepcopy(sig)  # copy signal and correct for lvl difference
-        modulated_sig.level *= _calibration_levels[int(row[0])]
+        modulated_sig.level *= _calibration_lvls[int(row[0])]
         rec.append(play_and_record(row[0], modulated_sig, apply_calibration=False))
         if row[0] == target_speaker:
             target = rec[-1]
@@ -620,9 +636,9 @@ def test_equalization(sig, speakers="all", max_diff=5, exclude=None):
     for row in speaker_list:
         sig2 = deepcopy(sig)
         rec_raw.append(play_and_record(row[0], sig2))
-        sig2.level *= _calibration_levels[int(row[0])]
+        sig2.level *= _calibration_lvls[int(row[0])]
         rec_lvl_eq.append(play_and_record(row[0], sig2))
-        sig2 = _calibration_filter.channel(int(row[0])).apply(sig2)
+        sig2 = _calibration_freqs.channel(int(row[0])).apply(sig2)
         rec_freq_eq.append(play_and_record(row[0], sig2))
     for i, rec in enumerate([rec_raw, rec_lvl_eq, rec_freq_eq]):
         rec = slab.Sound(rec)

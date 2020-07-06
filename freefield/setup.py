@@ -489,12 +489,9 @@ def localization_test(sound, speakers, n_reps, n_images=1):
     speakers = speakers_from_list(speakers)
     seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
     response = pd.DataFrame(columns=["ele_target", "azi_target", "ele_response", "azi_response"])
-    start = slab.Sound.read(
-        "C:/Projects/EEG_Elevation_Max/wav_files/localization_test_start.wav")
+    start = slab.Sound.read("localization_test_start.wav")
     start = start.channel(0)
-    set_variable(variable="data", value=start.data, proc="RX8s")
-    set_variable(variable="playbuflen", value=len(start), proc="RX8s")
-    set_variable(variable="chan", value=1, proc="RX8s")
+    set_signal_and_speaker(signal=start, speaker=23, apply_calibration=False)
     trigger()
     wait_to_finish_playing()
     while not get_variable(variable="response", proc="RP2"):
@@ -579,7 +576,7 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
     fbank.save(_freq_calibration_file)  # save as 'calibration_arc.npy' or dome.
     printv('Calibration completed.')
     if test:
-        test_equalization(speakers)
+        test_equalization(sig)
 
 
 def _level_equalization(sig, speaker_list, target_speaker):
@@ -616,13 +613,14 @@ def _frequency_equalization(sig, speaker_list, target_speaker, bandwidth,
     rec.data[:, rec.level < _rec_tresh] = target.data
     if exclude is not None:
         for e in exclude:
+            print("excluding speaker %s from frequency equalization..." % (e))
             rec.data[:, e] = target.data[:, 0]
     fbank = slab.Filter.equalizing_filterbank(target=target, signal=rec, low_lim=low_lim,
                                               hi_lim=hi_lim, bandwidth=bandwidth, alpha=alpha)
     return fbank, rec
 
 
-def test_equalization(sig, speakers="all", max_diff=5, exclude=None):
+def test_equalization(sig, speakers="all", max_diff=5):
     """
     Test the effectiveness of the speaker equalization
     """
@@ -640,14 +638,16 @@ def test_equalization(sig, speakers="all", max_diff=5, exclude=None):
         rec_lvl_eq.append(play_and_record(row[0], sig2))
         sig2 = _calibration_freqs.channel(int(row[0])).apply(sig2)
         rec_freq_eq.append(play_and_record(row[0], sig2))
+        # this should do the same thing:
+        # rec_freq_eq.append(play_and_record(row[0], sig, apply_calibration=True))
     for i, rec in enumerate([rec_raw, rec_lvl_eq, rec_freq_eq]):
         rec = slab.Sound(rec)
         rec.data = rec.data[:, rec.level > _rec_tresh]
-        rec.spectrum(axes=ax[i, 0])
+        rec.spectrum(axes=ax[i, 0], show=False)
         spectral_range(rec, plot=ax[i, 1], thresh=max_diff, log=False)
     plt.show()
 
-    return fig
+    return slab.Sound(rec_raw), slab.Sound(rec_lvl_eq), slab.Sound(rec_freq_eq)
 
 
 def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,

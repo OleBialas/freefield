@@ -617,6 +617,11 @@ def _frequency_equalization(sig, speaker_list, target_speaker, bandwidth,
             rec.data[:, e] = target.data[:, 0]
     fbank = slab.Filter.equalizing_filterbank(target=target, signal=rec, low_lim=low_lim,
                                               hi_lim=hi_lim, bandwidth=bandwidth, alpha=alpha)
+    # check for notches in the filter:
+    dB = fbank.tf(plot=False)[1][0:900, :]
+    if (dB < -30).sum() > 0:
+        printv("WARNING! The filter contains large notches! You might want to adjust the \n"
+               " alpha parameter or set plot=True to see the speakers affected...")
     return fbank, rec
 
 

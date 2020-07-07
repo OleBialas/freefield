@@ -361,8 +361,9 @@ def calibrate_camera(targets=None, n_reps=1, n_images=5):
                 time.sleep(0.1)  # wait untill button is pressed
         pose = get_headpose(average=False, convert=False, n_images=n_images)
         pose.insert(4, "n", seq.this_n)
+        pose = pose.dropna()
         coords = coords.append(pose, ignore_index=True, sort=True)
-        for _ in range(n_images):
+        for _ in range(len(pose)):
             coords = coords.append(
                 pd.DataFrame([[ele, azi, "world", seq.this_n]],
                              columns=["ele", "azi", "frame", "n"]),

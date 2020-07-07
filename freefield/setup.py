@@ -337,8 +337,20 @@ def speaker_from_direction(azimuth=0, elevation=0):
         _speaker_table[:, 3] == azimuth, _speaker_table[:, 4] == elevation)))
     speaker = int(_speaker_table[row, 0])
     channel = int(_speaker_table[row, 1])
-    rx8 = int(_speaker_table[row, 2])
-    return speaker, channel, rx8, azimuth, elevation
+    rx8_speaker = int(_speaker_table[row, 2])
+    bitval = _speaker_table[row, 5]
+    rx8_bit = _speaker_table[row, 6]
+    if bitval != bitval:
+        bitval = 0
+    else:
+        bitval = int(bitval)
+    rx8_bit = _speaker_table[row, 6]
+    if rx8_bit != rx8_bit:
+        rx8_bit = 0
+    else:
+        rx8_bit = int(rx8_bit)
+
+    return speaker, channel, rx8_speaker, azimuth, elevation, bitval, rx8_bit
 
 
 def speaker_from_number(speaker):
@@ -348,10 +360,21 @@ def speaker_from_number(speaker):
         '''
     row = int(np.argwhere(_speaker_table[:, 0] == speaker))
     channel = int(_speaker_table[row, 1])
-    rx8 = int(_speaker_table[row, 2])
+    rx8_speaker = int(_speaker_table[row, 2])
     azimuth = _speaker_table[row, 3]
     elevation = _speaker_table[row, 4]
-    return speaker, channel, rx8, azimuth, elevation
+    bitval = _speaker_table[row, 5]
+    if bitval != bitval:
+        bitval = 0
+    else:
+        bitval = int(bitval)
+    rx8_bit = _speaker_table[row, 6]
+    if rx8_bit != rx8_bit:
+        rx8_bit = 0
+    else:
+        rx8_bit = int(rx8_bit)
+
+    return speaker, channel, rx8_speaker, azimuth, elevation, bitval, rx8_bit
 
 
 def speakers_from_list(speakers):
@@ -359,11 +382,10 @@ def speakers_from_list(speakers):
     Get a subset of speakers from a list that contains either speaker numbers
     of tuples with (azimuth, elevation) of each speaker
     """
-    if not isinstance(speakers, list):
+    if not isinstance(speakers, list) and not isinstance(speakers, np.ndarray):
         raise ValueError("speakers mut be a list!")
-    if all(isinstance(x, int) for x in speakers):
+    if all(isinstance(x, int) for x in speakers) or all(isinstance(x, np.int64) for x in speakers):
         speaker_list = [speaker_from_number(x) for x in speakers]
-
     elif all(isinstance(x, tuple) for x in speakers):
         speaker_list = \
             [speaker_from_direction(x[0], x[1]) for x in speakers]
@@ -380,7 +402,7 @@ def all_leds():
     attached --> won't be necessary once all speakers have LEDs
     '''
     idx = np.where(_speaker_table[:, 5] == _speaker_table[:, 5])[0]
-    return _speaker_table[idx]
+    return speakers_from_list(idx)
 
 
 def shift_setup(delta_ele=0, delta_azi=0):
@@ -396,7 +418,7 @@ def shift_setup(delta_ele=0, delta_azi=0):
            "and % s degree in elevation" % (delta_azi, delta_ele))
 
 
-def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=True):
+def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=False):
     '''
         Upload a signal to the correct RX8 and channel (channel on the other
         RX8 set to -1). If apply_calibration=True, apply the speaker's inverse
@@ -407,7 +429,8 @@ def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=True):
         speaker, channel, proc = \
             speaker_from_direction(azimuth=speaker[0], elevation=speaker[1])
     else:
-        speaker, channel, proc, azimuth, elevation = speaker_from_number(speaker)
+        speaker, channel, proc, azimuth, elevation, _, _ = speaker_from_number(
+            speaker)
     if apply_calibration:
         if not _freq_calibration_file.exists():
             raise FileNotFoundError('No calibration file found.'
@@ -465,7 +488,7 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
 
 
 # functions implementing complete procedures:
-def localization_test(sound, speakers, n_reps, n_images=1):
+def localization_test(sound, n_reps, speakers=None, n_images=1, visual=False):
     """
     Run a basic localization test where the same sound is played from different
     speakers in randomized order, without playing the same position twice in
@@ -486,7 +509,10 @@ def localization_test(sound, speakers, n_reps, n_images=1):
     if camera._cal is None:
         raise ValueError("Camera must be calibrated before localization test!")
     warning = slab.Sound.clicktrain(duration=0.4).data.flatten()
-    speakers = speakers_from_list(speakers)
+    if visual is True:
+        speakers = all_leds()
+    else:
+        speakers = speakers_from_list(speakers)  # should return same format
     seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
     response = pd.DataFrame(columns=["ele_target", "azi_target", "ele_response", "azi_response"])
     start = slab.Sound.read("localization_test_start.wav")
@@ -497,15 +523,19 @@ def localization_test(sound, speakers, n_reps, n_images=1):
     while not get_variable(variable="response", proc="RP2"):
         time.sleep(0.01)
     while seq.n_remaining > 0:
-        _, ch, proc, azi, ele = seq.__next__()
+        _, ch, proc_ch, azi, ele, bit, proc_bit = seq.__next__()
         trial = {"azi_target": azi, "ele_target": ele}
-        set_variable(variable="chan", value=ch, proc="RX8%s" % int(proc))
-        set_variable(variable="chan", value=25, proc="RX8%s" % int(3-proc))
+        set_variable(variable="chan", value=ch, proc="RX8%s" % int(proc_ch))
+        set_variable(variable="chan", value=25, proc="RX8%s" % int(3-proc_ch))
         set_variable(variable="playbuflen", value=len(sound), proc="RX8s")
         set_variable(variable="data", value=data, proc="RX8s")
+        if visual is True:
+            set_variable(variable="bitmask", value=bit, proc=proc_bit)
         trigger()
         while not get_variable(variable="response", proc="RP2"):
             time.sleep(0.01)
+        if visual is True:
+            set_variable(variable="bitmask", value=0, proc=proc_bit)
         ele, azi = camera.get_headpose(n_images=n_images, convert=True, average=True)
         # TODO: implement success sound?
         trial["azi_response"], trial["ele_response"] = azi, ele

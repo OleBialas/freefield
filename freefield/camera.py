@@ -333,13 +333,16 @@ def calibrate_camera(targets=None, n_reps=1, n_images=5):
     """
     # azimuth and elevation of a set of points in camera and world coordinates
     # one list for each camera
-    coords = pd.DataFrame(columns=["ele", "azi", "cam", "frame", "n"])
+    coords = pd.DataFrame(columns=["ele_cam", "azi_cam",
+                                   "ele_world", "azi_world", "cam", "frame", "n"])
     if _cam_type == "web" and targets is None:
         raise ValueError("Define target positions for calibrating webcam!")
-    elif _cam_type is None:
-        raise ValueError("Initialize Camera before calibration!")
     elif _cam_type == "freefield":
         targets = setup.all_leds()  # get the speakers that have a LED attached
+        if setup._mode != "camera_calibration":
+            setup.initialize_devices(mode="camera_calibration")
+    elif _cam_type is None:
+        raise ValueError("Initialize Camera before calibration!")
     if not setup._mode == "camera_calibration":  # initialize setup
         setup.initialize_devices(mode="camera_calibration")
     seq = Trialsequence(name="cam", n_reps=n_reps, conditions=targets)
@@ -360,18 +363,16 @@ def calibrate_camera(targets=None, n_reps=1, n_images=5):
                                          supress_print=True):
                 time.sleep(0.1)  # wait untill button is pressed
         pose = get_headpose(average=False, convert=False, n_images=n_images)
+        pose = pose.rename(columns={"ele": "ele_cam", "azi": "azi_cam"})
         pose.insert(4, "n", seq.this_n)
+        pose.insert(5, "ele_world", ele)
+        pose.insert(6, "azi_world", azi)
         pose = pose.dropna()
         coords = coords.append(pose, ignore_index=True, sort=True)
-        for _ in range(len(pose)):
-            coords = coords.append(
-                pd.DataFrame([[ele, azi, "world", seq.this_n]],
-                             columns=["ele", "azi", "frame", "n"]),
-                ignore_index=True, sort=True)
     if _cam_type == "freefield":
         setup.set_variable(variable="bitmask", value=0, proc="RX8s")
 
-    # camera_to_world(coords)
+    camera_to_world(coords)
     return coords
 
 
@@ -385,25 +386,13 @@ def camera_to_world(coords, plot=True):
     if plot:
         fig, ax = plt.subplots(2)
         fig.suptitle("World vs Camera Coordinates")
-    # find the entries which which contain NaN for elevation and azimuth
-    bads = coords[coords["ele"].isna()].index
-    for bad in bads:
-        row = coords.loc[bad]
-        # get the position of the target in world coordinates
-        pos = coords[np.logical_and(coords["frame"] == "world",
-                                    coords["n"] == row["n"])]
-        setup.printv("Dropping NaN entry for cam %s at elevation %s and "
-                     "azimuth %s" % (row.cam, pos.ele.values[0],
-                                     pos.azi.values[0]))
-    coords = coords.drop(bads)  # remove all NaN entires
-    for cam in pd.unique(coords["cam"].dropna()):  # calibrate each camera
+
+    for cam in pd.unique(coords["cam"]):  # calibrate each camera
         cam_coords = coords[coords["cam"] == cam]
-        world_coords = coords[coords['n'].isin(cam_coords['n']) &
-                              (coords["frame"] == "world")]
         # find regression coefficients for azimuth and elevation
         for i, angle in enumerate(["ele", "azi"]):
-            y = cam_coords[angle].values.astype(float)
-            x = world_coords[angle].values.astype(float)
+            y = cam_coords[angle+"_cam"].values.astype(float)
+            x = cam_coords[angle+"_world"].values.astype(float)
             b, a, r, _, _ = stats.linregress(x, y)
             if np.abs(r) < 0.85:
                 setup.printv("For cam %s %s correlation between camera and"

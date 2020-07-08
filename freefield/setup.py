@@ -442,6 +442,7 @@ def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=False):
     set_variable(variable="data", value=signal.data, proc=proc)
     # set the other channel to non existant
     set_variable(variable='chan', value=25, proc=3-proc)
+    return signal
 
 
 def printv(message):
@@ -769,13 +770,14 @@ def play_and_record(speaker_nr, sig, compensate_delay=True,
     if binaural is False:
         rec = get_variable(variable='data', proc='RP2',
                            n_samples=sig.nsamples+n_delay)[n_delay:]
+        rec = slab.Sound(rec)
     if binaural is True:
         recl = get_variable(variable='datal', proc='RP2',
                             n_samples=sig.nsamples+n_delay)[n_delay:]
         recr = get_variable(variable='datar', proc='RP2',
                             n_samples=sig.nsamples+n_delay)[n_delay:]
-        rec = [recl, recr]
-    return slab.Sound(rec)  # names for channels?
+        rec = slab.Binaural([recl, recr])
+    return   # names for channels?
 
 
 def _plot_equalization(target, signal, filt, speaker_nr, low_lim=50,

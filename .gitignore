@@ -4,3 +4,4 @@ freefield/__pycache__/
 /log/
 freefield/level_calibration_dome.npy
 freefield/frequency_calibration_dome.npy
+*.npy

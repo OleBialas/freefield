@@ -118,7 +118,7 @@ def acquire_image(cams="all", n_images=1):
         raise ValueError("cams must be int, list of ints or 'all'!")
     if _cam_type is None:
         raise ValueError("Cameras must be initialized before acquisition")
-    if _imagesize is not None:  # ignore this when initialising to take a single image to determine the size
+    if _imagesize is not None:  # ignore when taking image while initializing
         image_data = np.zeros((_imagesize)+(n_images, len(cams)), dtype="uint8")
     if _cam_type == "freefield":  # start the cameras
         for cam in cams:

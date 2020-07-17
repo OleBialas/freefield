@@ -563,7 +563,7 @@ def localization_test(sound, n_reps, speakers=None, n_images=1, visual=False):
 
 
 def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
-                      low_lim=200, hi_lim=16000, alpha=1.0, plot=False, test=True, exclude=None):
+                      low_cutoff=200, high_cutoff=16000, alpha=1.0, plot=False, test=True, exclude=None):
     """
     Equalize the loudspeaker array in two steps. First: equalize over all
     level differences by a constant for each speaker. Second: remove spectral
@@ -576,7 +576,7 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
     printv('Starting calibration.')
     if not _mode == "play_and_record":
         initialize_devices(mode="play_and_record")
-    sig = slab.Sound.chirp(duration=0.05, from_freq=low_lim, to_freq=hi_lim)
+    sig = slab.Sound.chirp(duration=0.05, from_freq=low_cutoff, to_freq=high_cutoff)
     sig.level = 95
     if speakers == "all":  # use the whole speaker table
         speaker_list = _speaker_table
@@ -584,7 +584,7 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
         speaker_list = speakers_from_list(speakers)
     _calibration_lvls = _level_equalization(sig, speaker_list, target_speaker)
     fbank, rec = _frequency_equalization(
-        sig, speaker_list, target_speaker, bandwidth, low_lim, hi_lim, alpha, exclude)
+        sig, speaker_list, target_speaker, bandwidth, low_cutoff, high_cutoff, alpha, exclude)
     if plot:  # save plot for each speaker
         for i in range(rec.nchannels):
             _plot_equalization(target_speaker, rec.channel(i),
@@ -626,7 +626,7 @@ def _level_equalization(sig, speaker_list, target_speaker):
 
 
 def _frequency_equalization(sig, speaker_list, target_speaker, bandwidth,
-                            low_lim, hi_lim, alpha, exclude=None):
+                            low_cutoff, high_cutoff, alpha, exclude=None):
     """
     play the level-equalized signal, record and compute and a bank of inverse filter
     to equalize each speaker relative to the target one. Return filterbank and recordings
@@ -646,8 +646,8 @@ def _frequency_equalization(sig, speaker_list, target_speaker, bandwidth,
         for e in exclude:
             print("excluding speaker %s from frequency equalization..." % (e))
             rec.data[:, e] = target.data[:, 0]
-    fbank = slab.Filter.equalizing_filterbank(target=target, signal=rec, low_lim=low_lim,
-                                              hi_lim=hi_lim, bandwidth=bandwidth, alpha=alpha)
+    fbank = slab.Filter.equalizing_filterbank(target=target, signal=rec, low_cutoff=low_cutoff,
+                                              high_cutoff=high_cutoff, bandwidth=bandwidth, alpha=alpha)
     # check for notches in the filter:
     dB = fbank.tf(plot=False)[1][0:900, :]
     if (dB < -30).sum() > 0:
@@ -686,7 +686,7 @@ def test_equalization(sig, speakers="all", max_diff=5):
     return slab.Sound(rec_raw), slab.Sound(rec_lvl_eq), slab.Sound(rec_freq_eq)
 
 
-def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,
+def spectral_range(signal, bandwidth=1/5, low_cutoff=50, high_cutoff=20000, thresh=3,
                    plot=True, log=True):
     """
     Compute the range of differences in power spectrum for all channels in
@@ -700,9 +700,9 @@ def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,
     # TODO: this really should be part of the slab.Sound file
     # generate ERB-spaced filterbank:
     fbank = slab.Filter.cos_filterbank(length=1000, bandwidth=bandwidth,
-                                       low_lim=low_lim, hi_lim=hi_lim,
+                                       low_cutoff=low_cutoff, high_cutoff=high_cutoff,
                                        samplerate=signal.samplerate)
-    center_freqs, _, _ = slab.Filter._center_freqs(low_lim, hi_lim, bandwidth)
+    center_freqs, _, _ = slab.Filter._center_freqs(low_cutoff, high_cutoff, bandwidth)
     center_freqs = slab.Filter._erb2freq(center_freqs)
     # create arrays to write data into:
     levels = np.zeros((signal.nchannels, fbank.nchannels))
@@ -780,8 +780,8 @@ def play_and_record(speaker_nr, sig, compensate_delay=True,
     return   # names for channels?
 
 
-def _plot_equalization(target, signal, filt, speaker_nr, low_lim=50,
-                       hi_lim=20000, bandwidth=1/8):
+def _plot_equalization(target, signal, filt, speaker_nr, low_cutoff=50,
+                       high_cutoff=20000, bandwidth=1/8):
     """
     Make a plot to show the effect of the equalizing FIR-filter on the
     signal in the time and frequency domain. The plot is saved to the log
@@ -800,8 +800,8 @@ def _plot_equalization(target, signal, filt, speaker_nr, low_lim=50,
                  xlabel="Time in ms", ylabel="Amplitude")
     # get level per subband for target, signal and filtered signal
     fbank = slab.Filter.cos_filterbank(
-        1000, bandwidth, low_lim, hi_lim, signal.samplerate)
-    center_freqs, _, _ = slab.Filter._center_freqs(low_lim, hi_lim, bandwidth)
+        1000, bandwidth, low_cutoff, high_cutoff, signal.samplerate)
+    center_freqs, _, _ = slab.Filter._center_freqs(low_cutoff, high_cutoff, bandwidth)
     center_freqs = slab.Filter._erb2freq(center_freqs)
     for data, name, color in zip([target, signal, signal_filt],
                                  ["target", "signal", "filtered"],

@@ -431,18 +431,19 @@ def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=False):
     else:
         speaker, channel, proc, azimuth, elevation, _, _ = speaker_from_number(
             speaker)
+    signal_play = deepcopy(signal)
     if apply_calibration:
         if not _freq_calibration_file.exists():
             raise FileNotFoundError('No calibration file found.'
                                     'Please calibrate the speaker setup.')
         printv('Applying calibration.')
-        signal.level *= _calibration_lvls[int(speaker)]
-        signal = _calibration_freqs.channel(int(speaker)).apply(signal)
+        signal_play.level *= _calibration_lvls[int(speaker)]
+        signal_play = _calibration_freqs.channel(
+            int(speaker)).apply(signal_play)
     set_variable(variable='chan', value=channel, proc=proc)
-    set_variable(variable="data", value=signal.data, proc=proc)
+    set_variable(variable="data", value=signal_play.data, proc=proc)
     # set the other channel to non existant
     set_variable(variable='chan', value=25, proc=3-proc)
-    return signal
 
 
 def printv(message):
@@ -538,7 +539,6 @@ def localization_test(sound, n_reps, speakers=None, n_images=1, visual=False):
         if visual is True:
             set_variable(variable="bitmask", value=0, proc=proc_bit)
         ele, azi = camera.get_headpose(n_images=n_images, convert=True, average=True)
-        # TODO: implement success sound?
         trial["azi_response"], trial["ele_response"] = azi, ele
         response = response.append(trial, ignore_index=True)
         head_in_position = 0
@@ -571,6 +571,7 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
     will be excluded from the frequency equalization. For more details on how the
     inverse filters are computed see the documentation of slab.Filter.equalizing_filterbank
     """
+    # TODO: check filter shift compensation
     global _calibration_freqs, _calibration_lvls
     import datetime
     printv('Starting calibration.')
@@ -673,9 +674,9 @@ def test_equalization(sig, speakers="all", max_diff=5):
         sig2.level *= _calibration_lvls[int(row[0])]
         rec_lvl_eq.append(play_and_record(row[0], sig2))
         sig2 = _calibration_freqs.channel(int(row[0])).apply(sig2)
-        rec_freq_eq.append(play_and_record(row[0], sig2))
+        # rec_freq_eq.append(play_and_record(row[0], sig2))
         # this should do the same thing:
-        # rec_freq_eq.append(play_and_record(row[0], sig, apply_calibration=True))
+        rec_freq_eq.append(play_and_record(row[0], sig, apply_calibration=True))
     for i, rec in enumerate([rec_raw, rec_lvl_eq, rec_freq_eq]):
         rec = slab.Sound(rec)
         rec.data = rec.data[:, rec.level > _rec_tresh]
@@ -686,7 +687,7 @@ def test_equalization(sig, speakers="all", max_diff=5):
     return slab.Sound(rec_raw), slab.Sound(rec_lvl_eq), slab.Sound(rec_freq_eq)
 
 
-def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=20000, thresh=3,
+def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=24000, thresh=3,
                    plot=True, log=True):
     """
     Compute the range of differences in power spectrum for all channels in
@@ -777,7 +778,7 @@ def play_and_record(speaker_nr, sig, compensate_delay=True,
         recr = get_variable(variable='datar', proc='RP2',
                             n_samples=sig.nsamples+n_delay)[n_delay:]
         rec = slab.Binaural([recl, recr])
-    return   # names for channels?
+    return rec
 
 
 def _plot_equalization(target, signal, filt, speaker_nr, low_lim=50,

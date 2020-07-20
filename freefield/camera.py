@@ -52,24 +52,25 @@ _reprojectsrc = numpy.float32([[10.0, 10.0, 10.0],
                                [-10.0, 10.0, -10.0],
                                [-10.0, -10.0, -10.0],
                                [-10.0, -10.0, 10.0]])
+# initialize dlib face detection and landmark fitting:
+_detector = dlib.get_frontal_face_detector()
+try:
+    _predictor = dlib.shape_predictor(
+        str(_location/Path("shape_predictor_68_face_landmarks.dat")))
+except RuntimeError:
+    print("could not find the file containing the face landmarks!\n"
+          "i will download it for you, this may take a moment...")
+    filedata = urllib.request.urlopen("https://media.githubusercontent.com/media/OleBialas/"
+                                      "freefield_toolbox""/master/freefield/"
+                                      "shape_predictor_68_face_landmarks.dat")
+    datatowrite = filedata.read()
+    with open(_location/Path("shape_predictor_68_face_landmarks.dat"), "wb") as file:
+        file.write(datatowrite)
+    print("done")
 
 
 def init(multiprocess=False, type="freefield"):
-    global _cams, _system, _cam_type, _detector, _predictor, _imagesize
-
-    # initialize dlib face detection and landmark fitting:
-    _detector = dlib.get_frontal_face_detector()
-    if not (_location/Path("shape_predictor_68_face_landmarks.dat")).exists():
-        print("could not find the file containing the face landmarks!\n"
-              "i will download it for you, this may take a moment...")
-        filedata = urllib.request.urlopen("https: // media.githubusercontent.com/media/OleBialas/freefield_toolbox"
-                                          "/master/freefield/shape_predictor_68_face_landmarks.dat")
-        datatowrite = filedata.read()
-        with open(_location/Path("shape_predictor_68_face_landmarks.dat", "wb")) as file:
-            file.write(datatowrite)
-        print("done")
-    _predictor = dlib.shape_predictor(
-        str(_location/Path("shape_predictor_68_face_landmarks.dat")))
+    global _cams, _system, _cam_type, _imagesize
 
     _cam_type = type.lower()
     if _cam_type == "freefield":  # Use FLIR cameras
@@ -282,15 +283,16 @@ def _pose_from_image(image, plot_arg=None):
         reprojectdst = tuple(map(tuple, reprojectdst.reshape(8, 2)))
 
         for (x, y) in shape:
-            cv2.circle(image, (x, y), 1, (0, 0, 255), -1)
+            image = image.astype(np.float32)
+            cv2.circle(image, (x, y), 3, (0, 0, 255), -1)
             cv2.putText(image, "Elevation: " + "{:7.2f}".format(angles[0, 0]),
-                        (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0),
+                        (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
                         thickness=2)
             cv2.putText(image, "Azimuth: " + "{:7.2f}".format(angles[1, 0]),
-                        (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0),
+                        (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
                         thickness=2)
             cv2.putText(image, "Tilt: " + "{:7.2f}".format(angles[2, 0]),
-                        (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0),
+                        (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
                         thickness=2)
         if plot_arg == "show":
             matplotlib.pyplot.imshow(image, cmap="gray")

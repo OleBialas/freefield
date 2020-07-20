@@ -5,3 +5,4 @@ freefield/__pycache__/
 freefield/level_calibration_dome.npy
 freefield/frequency_calibration_dome.npy
 *.npy
+freefield/shape_predictor_68_face_landmarks.dat

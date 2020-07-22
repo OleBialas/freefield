@@ -386,7 +386,7 @@ def speakers_from_list(speakers):
         raise ValueError("speakers mut be a list!")
     if all(isinstance(x, int) for x in speakers) or all(isinstance(x, np.int64) for x in speakers):
         speaker_list = [speaker_from_number(x) for x in speakers]
-    elif all(isinstance(x, tuple) for x in speakers):
+    elif all(isinstance(x, tuple) for x in speakers) or all(isinstance(x, list) for x in speakers):
         speaker_list = \
             [speaker_from_direction(x[0], x[1]) for x in speakers]
     else:

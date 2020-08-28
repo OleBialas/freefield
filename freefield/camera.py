@@ -23,6 +23,8 @@ import urllib.request
 # define internal variables
 _location = Path(__file__).resolve().parents[0]
 _detector = None
+_res = 1  # resolution of images, 1 = 100%
+_nim = 1  # number of images to acquire for headpose
 _predictor = None
 _imagesize = None
 _cam_type = None
@@ -100,6 +102,14 @@ def init(multiprocess=False, type="freefield"):
         raise ValueError("type must be either 'freefield' or 'web'")
     # get a single image to get the size and estimate camera coefficients
     _imagesize = acquire_image(cams=0, n_images=1).shape[0:2]
+
+
+def set(n_images=None, resolution=None):
+    global _nim, _res
+    if n_images:
+        _nim = n_images
+    if resolution:
+        _res = resolution
 
 
 def acquire_image(cams="all", n_images=1):
@@ -201,7 +211,7 @@ def set_imagesize(height, width):
         _imagesize = (imheight, imwidth)
 
 
-def get_headpose(cams="all", convert=False, average=False, n_images=1, resolution=1):
+def get_headpose(cams="all", convert=False, average=False, n_images=None):
     """
     Acquire n images and compute headpose (elevation and azimuth). If
     convert is True use the regression coefficients to convert
@@ -209,35 +219,36 @@ def get_headpose(cams="all", convert=False, average=False, n_images=1, resolutio
     """
     # TODO: sanity check the resulting dataframe, e.g. how big is the max diff
     # TODO: downscaling images after recording should be replaced with setting camera resolution
-    if resolution > 1:
-        raise ValueError("Parameter 'resolution' must be <= 1!")
     pose = pd.DataFrame(columns=["ele", "azi", "cam"])
+    if n_images is None:  # use default is not specified
+        n_images = _nim
     images = acquire_image(cams, n_images)  # take images
     for i_cam in range(images.shape[3]):
         for i_image in range(images.shape[2]):
             image = PIL.Image.fromarray(images[:, :, i_image, i_cam])
-            width, height = int(_imagesize[1]*resolution), int(_imagesize[0]*resolution)
+            width, height = int(_imagesize[1]*_res), int(_imagesize[0]*_res)
             image = image.resize((width, height), PIL.Image.ANTIALIAS)
             ele, azi, _ = _pose_from_image(numpy.asarray(image))
             row = pd.DataFrame([[ele, azi, i_cam]],
                                columns=["ele", "azi", "cam"])
             pose = pose.append(row)
     if convert:  # convert azimuth and elevation to world coordinates
-        if _cal is None:
-            raise ValueError("Can't convert coordinates because camera is"
-                             "not calibrated!")
+        if len(pose.dropna()) > 0:
+            if _cal is None:
+                raise ValueError("Can't convert coordinates because camera is"
+                                 "not calibrated!")
+            else:
+                for cam in np.unique(pose["cam"]):
+                    for angle in ["azi", "ele"]:
+                        reg = _cal[(_cal["cam"] == cam) & (_cal["angle"] == angle)]
+                        pose.loc[pose["cam"] == cam, angle] = (pose[pose["cam"] == cam][angle] -
+                                                               reg["a"].values)/reg["b"].values
+            pose.insert(3, "frame", "world")
         else:
-            for cam in np.unique(pose["cam"]):
-                for angle in ["azi", "ele"]:
-                    reg = _cal[(_cal["cam"] == cam) & (_cal["angle"] == angle)]
-                    pose.loc[pose["cam"] == cam, angle] = (pose[pose["cam"] == cam][angle] -
-                                                           reg["a"].values)/reg["b"].values
-        pose.insert(3, "frame", "world")
-    else:
-        pose.insert(3, "frame", "camera")
+            pose.insert(3, "frame", "camera")
     if average:  # only return the mean
         if not convert:
-            raise ValueError("Can only average after convertig coordinates!")
+            raise ValueError("Can only average after converting coordinates!")
         return pose.ele.mean(), pose.azi.mean()
     else:  # return the whole data frame
         return pose
@@ -310,7 +321,7 @@ def _pose_from_image(image, plot_arg=None):
                 "a string (save to log folder as pdf with that name)")
 
 
-def calibrate_camera(targets=None, n_reps=1, n_images=5):
+def calibrate_camera(targets=None, n_reps=1, cams="all"):
     """
     Calibrate camera(s) by computing the linear regression for a number of
     points in camera and world coordinates.
@@ -364,11 +375,11 @@ def calibrate_camera(targets=None, n_reps=1, n_images=5):
             while not setup.get_variable(variable="response", proc="RP2",
                                          supress_print=True):
                 time.sleep(0.1)  # wait untill button is pressed
-        pose = get_headpose(average=False, convert=False, n_images=n_images)
+        pose = get_headpose(average=False, convert=False, cams=cams)
         pose = pose.rename(columns={"ele": "ele_cam", "azi": "azi_cam"})
-        pose.insert(4, "n", seq.this_n)
-        pose.insert(5, "ele_world", ele)
-        pose.insert(6, "azi_world", azi)
+        pose.insert(0, "n", seq.this_n)
+        pose.insert(2, "ele_world", ele)
+        pose.insert(4, "azi_world", azi)
         pose = pose.dropna()
         coords = coords.append(pose, ignore_index=True, sort=True)
     if _cam_type == "freefield":
@@ -384,7 +395,7 @@ def camera_to_world(coords, plot=True):
     them in global variables
     """
     global _cal
-    _cal = pd.DataFrame(columns=["a", "b", "cam", "angle"])
+    _cal = pd.DataFrame(columns=["a", "b", "cam", "angle", "min", "max"])
     if plot:
         fig, ax = plt.subplots(2)
         fig.suptitle("World vs Camera Coordinates")
@@ -395,14 +406,15 @@ def camera_to_world(coords, plot=True):
         for i, angle in enumerate(["ele", "azi"]):
             y = cam_coords[angle+"_cam"].values.astype(float)
             x = cam_coords[angle+"_world"].values.astype(float)
+            min, max = cam_coords[angle+"_world"].min(), cam_coords[angle+"_world"].max()
             b, a, r, _, _ = stats.linregress(x, y)
             if np.abs(r) < 0.85:
                 setup.printv("For cam %s %s correlation between camera and"
                              "world coordinates is only %s! \n"
                              "There might be something wrong..."
                              % (cam, angle, r))
-            _cal = _cal.append(pd.DataFrame([[a, b, cam, angle]],
-                                            columns=["a", "b", "cam", "angle"]),
+            _cal = _cal.append(pd.DataFrame([[a, b, cam, angle, min, max]],
+                                            columns=["a", "b", "cam", "angle", "min", "max"]),
                                ignore_index=True)
             if plot:
                 ax[i].scatter(x, y)

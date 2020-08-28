@@ -33,6 +33,7 @@ _rec_tresh = 65  # treshold in dB above which recordings are not rejected
 _fix_ele = 0  # fixation points' elevation
 _fix_azi = 0  # fixation points' azimuth
 _fix_acc = 10  # accuracy for determining if subject looks at fixation point
+_dB_level = 75  # level at which sounds are being played by default
 
 
 def initialize_devices(ZBus=False, RX81_file=None, RX82_file=None,
@@ -134,12 +135,18 @@ def _files_from_mode(mode):
         RX82_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
         ZBus, cam = True, False
         _mode = "play_and_record"
-    elif mode == "localization_test":
+    elif mode == "localization_test_freefield":
         RP2_file = _location.parents[0] / Path("rcx/button.rcx")
         RX81_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
         RX82_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
         ZBus, cam = True, True
-        _mode = "localization_test"
+        _mode = "localization_test_freefield"
+    elif mode == "localization_test_headphones":
+        RP2_file = _location.parents[0] / Path("rcx/bi_play_buf.rcx")
+        RX81_file = _location.parents[0] / Path("rcx/leds.rcx")
+        RX82_file = _location.parents[0] / Path("rcx/leds.rcx")
+        ZBus, cam = True, True
+        _mode = "localization_test_headphones"
     elif mode == "camera_calibration":
         RP2_file = _location.parents[0] / Path("rcx/button.rcx")
         RX81_file = _location.parents[0] / Path("rcx/leds.rcx")
@@ -490,7 +497,7 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
 
 
 # functions implementing complete procedures:
-def localization_test(sound, n_reps, speakers=None, n_images=1, visual=False):
+def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=False, average=False):
     """
     Run a basic localization test where the same sound is played from different
     speakers in randomized order, without playing the same position twice in
@@ -500,14 +507,8 @@ def localization_test(sound, n_reps, speakers=None, n_images=1, visual=False):
     test! After every trial the listener has to point to the middle speaker at
     0 elevation and azimuth and press the button to iniciate the next trial.
     """
-    if not _mode == "localization_test":
-        initialize_devices(mode="localization_test")
-    if isinstance(sound, slab.sound.Sound) and sound.nchannels == 1:
-        data = sound.data.flatten()  # Not sure if flatten is needed...
-    elif isinstance(sound, np.ndarray) and sound.ndim == 1:
-        data = sound
-    else:
-        raise ValueError("Sound must be a 1D array or instance of slab.Sound!")
+    if not _mode == "localization_test_freefield":
+        initialize_devices(mode="localization_test_freefield")
     if camera._cal is None:
         raise ValueError("Camera must be calibrated before localization test!")
     warning = slab.Sound.clicktrain(duration=0.4).data.flatten()
@@ -517,35 +518,36 @@ def localization_test(sound, n_reps, speakers=None, n_images=1, visual=False):
         speakers = speakers_from_list(speakers)  # should return same format
     seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
     response = pd.DataFrame(columns=["ele_target", "azi_target", "ele_response", "azi_response"])
-    start = slab.Sound.read("localization_test_start.wav")
-    start = start.channel(0)
+    start = slab.Sound.read("localization_test_start.wav").channel(0)
     set_signal_and_speaker(signal=start, speaker=23, apply_calibration=False)
     trigger()
     wait_to_finish_playing()
     while not get_variable(variable="response", proc="RP2"):
         time.sleep(0.01)
     while seq.n_remaining > 0:
+        sound = slab.Sound.pinknoise(duration=duration)
+        sound.level = _dB_level
         _, ch, proc_ch, azi, ele, bit, proc_bit = seq.__next__()
         trial = {"azi_target": azi, "ele_target": ele}
         set_variable(variable="chan", value=ch, proc="RX8%s" % int(proc_ch))
         set_variable(variable="chan", value=25, proc="RX8%s" % int(3-proc_ch))
         set_variable(variable="playbuflen", value=len(sound), proc="RX8s")
-        set_variable(variable="data", value=data, proc="RX8s")
+        set_variable(variable="data", value=sound.data, proc="RX8s")
         if visual is True:
             set_variable(variable="bitmask", value=bit, proc=proc_bit)
         trigger()
         while not get_variable(variable="response", proc="RP2"):
             time.sleep(0.01)
+        ele, azi = camera.get_headpose(convert=True, average=average)
         if visual is True:
             set_variable(variable="bitmask", value=0, proc=proc_bit)
-        ele, azi = camera.get_headpose(n_images=n_images, convert=True, average=True)
         trial["azi_response"], trial["ele_response"] = azi, ele
         response = response.append(trial, ignore_index=True)
         head_in_position = 0
         while head_in_position == 0:
             while not get_variable(variable="response", proc="RP2"):
                 time.sleep(0.01)
-            ele, azi = camera.get_headpose(n_images=1, convert=True, average=True)
+            ele, azi = camera.get_headpose(convert=True, average=True)
             if ele is np.nan:
                 ele = 0
             if azi is np.nan:
@@ -559,6 +561,45 @@ def localization_test(sound, n_reps, speakers=None, n_images=1, visual=False):
                 set_variable(variable="chan", value=25, proc="RX82")
                 set_variable(variable="playbuflen", value=len(warning), proc="RX8s")
                 trigger()
+    # play sound to signal end
+    set_signal_and_speaker(signal=start, speaker=23, apply_calibration=False)
+    trigger()
+    return response
+
+
+def localization_test_headphones(sound, n_reps, duration=None, visual=False):
+
+    if isinstance(sound, dict):
+        if not _mode == "localization_test_headphones":
+            initialize_devices(mode="localization_test_headphones")
+        recs = list(sound.keys())
+        speakers = speakers_from_list(list(sound.values()))
+        seq = slab.Trialsequence(recs, n_reps, kind="non_repeating")
+    else:
+        raise ValueError("Input for argument sound must be a dictionary")
+    if visual is True:
+        if sum([s[-1] == 0 for s in speakers]) > 0:
+            raise ValueError("At least one of the selected speakers does not have a LED attached!")
+    if camera._cal is None:
+        raise ValueError("Camera must be calibrated before localization test!")
+
+    warning = slab.Sound.clicktrain(duration=0.4).data.flatten()
+    response = pd.DataFrame(columns=["ele_target", "azi_target",
+                                     "ele_response", "azi_response"])
+    start = slab.Sound.read(_location/"localization_test_start.wav").channel(0)
+    set_variable(variable="playbuflen", value=len(start.data.flatten()), proc="RP2")
+    set_variable(variable="data_l", value=start.data.flatten(), proc="RP2")
+    set_variable(variable="data_r", value=start.data.flatten(), proc="RP2")
+    trigger()
+    while seq.n_remaining > 0:
+        rec = seq.__next__()
+        _, ch, proc_ch, azi, ele, bit, proc_bit = speaker_from_direction(
+            sound[rec][0], sound[rec][1])
+        data = slab.Binaural(rec).random_interval(duration)
+        set_variable(variable="playbuflen", value=len(data), proc="RP2")
+        set_variable(variable="data_l", value=data.left.data.flatten(), proc="RP2")
+        set_variable(variable="data_r", value=data.right.data.flatten(), proc="RP2")
+
     return response
 
 
@@ -647,8 +688,8 @@ def _frequency_equalization(sig, speaker_list, target_speaker, bandwidth,
         for e in exclude:
             print("excluding speaker %s from frequency equalization..." % (e))
             rec.data[:, e] = target.data[:, 0]
-    fbank = slab.Filter.equalizing_filterbank(target=target, signal=rec, low_lim=low_lim,
-                                              hi_lim=hi_lim, bandwidth=bandwidth, alpha=alpha)
+    fbank = slab.Filter.equalizing_filterbank(target=target, signal=rec, low_cutoff=low_lim,
+                                              high_cutoff=hi_lim, bandwidth=bandwidth, alpha=alpha)
     # check for notches in the filter:
     dB = fbank.tf(plot=False)[1][0:900, :]
     if (dB < -30).sum() > 0:

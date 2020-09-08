@@ -497,7 +497,7 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
 
 
 # functions implementing complete procedures:
-def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=False, average=False):
+def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=False):
     """
     Run a basic localization test where the same sound is played from different
     speakers in randomized order, without playing the same position twice in
@@ -538,7 +538,7 @@ def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=Fa
         trigger()
         while not get_variable(variable="response", proc="RP2"):
             time.sleep(0.01)
-        ele, azi = camera.get_headpose(convert=True, average=average)
+        ele, azi = camera.get_headpose(convert=True, average=True, target=(azi, ele))
         if visual is True:
             set_variable(variable="bitmask", value=0, proc=proc_bit)
         trial["azi_response"], trial["ele_response"] = azi, ele
@@ -547,7 +547,7 @@ def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=Fa
         while head_in_position == 0:
             while not get_variable(variable="response", proc="RP2"):
                 time.sleep(0.01)
-            ele, azi = camera.get_headpose(convert=True, average=True)
+            ele, azi = camera.get_headpose(convert=True, average=True, n_images=1)
             if ele is np.nan:
                 ele = 0
             if azi is np.nan:

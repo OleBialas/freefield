@@ -211,7 +211,7 @@ def set_imagesize(height, width):
         _imagesize = (imheight, imwidth)
 
 
-def get_headpose(cams="all", convert=False, average=False, n_images=None):
+def get_headpose(cams="all", target=(None, None), convert=False, average=False, n_images=None):
     """
     Acquire n images and compute headpose (elevation and azimuth). If
     convert is True use the regression coefficients to convert
@@ -239,8 +239,11 @@ def get_headpose(cams="all", convert=False, average=False, n_images=None):
                                  "not calibrated!")
             else:
                 for cam in np.unique(pose["cam"]):
-                    for angle in ["azi", "ele"]:
+                    for angle, expected in zip(["azi", "ele"], target):
                         reg = _cal[(_cal["cam"] == cam) & (_cal["angle"] == angle)]
+                        if expected is not None:  # only use cam if traget is in range
+                            if not reg["min"].values[0] <= expected <= reg["max"].values[0]:
+                                pose.loc[pose["cam"] == cam, angle] = np.nan
                         pose.loc[pose["cam"] == cam, angle] = (pose[pose["cam"] == cam][angle] -
                                                                reg["a"].values)/reg["b"].values
             pose.insert(3, "frame", "world")

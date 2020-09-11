@@ -361,7 +361,7 @@ def calibrate_camera(targets=None, n_reps=1, cams="all"):
         raise ValueError("Initialize Camera before calibration!")
     if not setup._mode == "camera_calibration":  # initialize setup
         setup.initialize_devices(mode="camera_calibration")
-    seq = Trialsequence(name="cam", n_reps=n_reps, conditions=targets)
+    seq = Trialsequence(n_reps=n_reps, conditions=targets)
     while seq.n_remaining:
         target = seq.__next__()
         if _cam_type == "web":  # look at target position and press enter

@@ -1,5 +1,6 @@
 import time
 from pathlib import Path
+import glob
 from copy import deepcopy
 import collections
 import numpy as np
@@ -33,7 +34,6 @@ _rec_tresh = 65  # treshold in dB above which recordings are not rejected
 _fix_ele = 0  # fixation points' elevation
 _fix_azi = 0  # fixation points' azimuth
 _fix_acc = 10  # accuracy for determining if subject looks at fixation point
-_dB_level = 75  # level at which sounds are being played by default
 
 
 def initialize_devices(ZBus=False, RX81_file=None, RX82_file=None,
@@ -48,7 +48,7 @@ def initialize_devices(ZBus=False, RX81_file=None, RX82_file=None,
     Initialzation will take a few seconds per device
     """
     # TODO: set speakers to 0 when intializing setup??
-    global _procs
+    global _procs, _warning, _signal, _response
     set_samplerate(_samplerate)
     if not _speaker_config:
         raise ValueError("Please set device to 'arc' or "
@@ -73,15 +73,19 @@ def initialize_devices(ZBus=False, RX81_file=None, RX82_file=None,
                                      connection=connection)
     if RP2_file:
         RP2 = _initialize_processor(device_type='RP2',
-                                    rcx_file=str(RP2_file), index=1,
-                                    connection=connection)
+                                    rcx_file=str(RP2_file), index=1, connection=connection)
     if ZBus:
         ZB = _initialize_processor(device_type='ZBus')
     if cam:
         camera.init()
     proc_tuple = collections.namedtuple('TDTrack', 'ZBus RX81 RX82 RP2')
     _procs = proc_tuple(ZBus=ZB, RX81=RX81, RX82=RX82, RP2=RP2)
-
+    # sound to signal a warning:
+    _warning = slab.Sound.clicktrain(duration=0.4).data.flatten()
+    # sound to signal the start and end of an experiment
+    _signal = slab.Sound.read(_location/"localization_test_start.wav").channel(0)
+    # template for output from localization tests
+    _response = pd.DataFrame(columns=["ele_target", "azi_target", "ele_response", "azi_response"])
 
 def _initialize_processor(device_type=None, rcx_file=None, index=1,
                           connection='GB'):
@@ -496,6 +500,26 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
     return n_sound_traveling + n_da + n_ad
 
 
+def check_pose(target=None, var=10):
+    """ Take an image and check if head is pointed to the target position +/- var.
+    Returns True or False. NaN values are ignored."""
+    if target is None:
+        target=(_fix_azi, _fix_ele)
+    correct = True
+    ele, azi = camera.get_headpose(convert=True, average=True, n_images=1)
+    if azi is np.nan:
+        pass
+    else:
+        if np.abs(ele-target[0]) > var:
+            correct=False
+    if ele is np.nan:
+        pass
+    else:
+        if np.abs(ele-target[1]) > var:
+            correct=False
+    return correct
+
+
 # functions implementing complete procedures:
 def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=False):
     """
@@ -526,7 +550,6 @@ def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=Fa
         time.sleep(0.01)
     while seq.n_remaining > 0:
         sound = slab.Sound.pinknoise(duration=duration)
-        sound.level = _dB_level
         _, ch, proc_ch, azi, ele, bit, proc_bit = seq.__next__()
         trial = {"azi_target": azi, "ele_target": ele}
         set_variable(variable="chan", value=ch, proc="RX8%s" % int(proc_ch))
@@ -567,39 +590,62 @@ def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=Fa
     return response
 
 
-def localization_test_headphones(sound, n_reps, duration=None, visual=False):
+def localization_test_headphones(folder, speakers, n_reps=1, visual=False):
 
-    if isinstance(sound, dict):
+    folder = Path(folder)
+    if not folder.exists():
+        raise ValueError("Folder does not exist!")
+    else:
         if not _mode == "localization_test_headphones":
             initialize_devices(mode="localization_test_headphones")
-        recs = list(sound.keys())
-        speakers = speakers_from_list(list(sound.values()))
-        seq = slab.Trialsequence(recs, n_reps, kind="non_repeating")
-    else:
-        raise ValueError("Input for argument sound must be a dictionary")
-    if visual is True:
-        if sum([s[-1] == 0 for s in speakers]) > 0:
+        speakers = speakers_from_list(speakers)
+        seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
+    if visual is True: # check if speakers have a LED
+        if any(np.isnan([s[-1] for s in speakers])):
             raise ValueError("At least one of the selected speakers does not have a LED attached!")
     if camera._cal is None:
         raise ValueError("Camera must be calibrated before localization test!")
-
-    warning = slab.Sound.clicktrain(duration=0.4).data.flatten()
-    response = pd.DataFrame(columns=["ele_target", "azi_target",
-                                     "ele_response", "azi_response"])
-    start = slab.Sound.read(_location/"localization_test_start.wav").channel(0)
-    set_variable(variable="playbuflen", value=len(start.data.flatten()), proc="RP2")
-    set_variable(variable="data_l", value=start.data.flatten(), proc="RP2")
-    set_variable(variable="data_r", value=start.data.flatten(), proc="RP2")
+    response = _response.copy()
+    # play start signal :
+    set_variable(variable="playbuflen", value=_signal.nsamples, proc="RP2")
+    set_variable(variable="data_l", value=_signal.data.flatten(), proc="RP2")
+    set_variable(variable="data_r", value=_signal.data.flatten(), proc="RP2")
     trigger()
-    while seq.n_remaining > 0:
-        rec = seq.__next__()
-        _, ch, proc_ch, azi, ele, bit, proc_bit = speaker_from_direction(
-            sound[rec][0], sound[rec][1])
-        data = slab.Binaural(rec).random_interval(duration)
-        set_variable(variable="playbuflen", value=len(data), proc="RP2")
-        set_variable(variable="data_l", value=data.left.data.flatten(), proc="RP2")
-        set_variable(variable="data_r", value=data.right.data.flatten(), proc="RP2")
-
+    # wait for button press to start the sequence
+    while not get_variable(variable="response", proc="RP2"):
+        time.sleep(0.01)
+    for trial in seq:  # loop trough trial sequence
+        _, _, _, azi, ele, bit, proc_bit = trial
+        trial = {"azi_target": azi, "ele_target": ele}
+        file = Path(np.random.choice(glob.glob(str(folder / ("*azi%s_ele%s*" % (azi, ele))))))
+        sound = slab.Binaural(slab.Sound(file))
+        # write sound into buffer
+        set_variable(variable="playbuflen", value=sound.nsamples, proc="RP2")
+        set_variable(variable="data_l", value=sound.left.data.flatten(), proc="RP2")
+        set_variable(variable="data_r", value=sound.right.data.flatten(), proc="RP2")
+        if visual is True:  # turn on the LED
+            set_variable(variable="bitmask", value=bit, proc=proc_bit)
+        trigger()
+        # wait for response, then estimate the headpose
+        while not get_variable(variable="response", proc="RP2"):
+            time.sleep(0.01)
+        ele, azi = camera.get_headpose(convert=True, average=True, target=(azi, ele))
+        if visual is True:  # turn of the LED
+            set_variable(variable="bitmask", value=0, proc=proc_bit)
+        # append response
+        trial["azi_response"], trial["ele_response"] = azi, ele
+        response = response.append(trial, ignore_index=True)
+        # wait till head is back in position, send warning if not
+        head_in_position = False
+        while not head_in_position:
+            while not get_variable(variable="response", proc="RP2"):
+                time.sleep(0.01)
+            head_in_position = check_pose()
+    # play sound to signal end
+    set_variable(variable="playbuflen", value=_signal.nsamples, proc="RP2")
+    set_variable(variable="data_l", value=_signal.data.flatten(), proc="RP2")
+    set_variable(variable="data_r", value=_signal.data.flatten(), proc="RP2")
+    trigger()
     return response
 
 
@@ -773,6 +819,17 @@ def spectral_range(signal, bandwidth=1/5, low_lim=50, hi_lim=24000, thresh=3,
     return difference
 
 
+def binaural_recording(sound, speaker_nr, compensate_delay=True, apply_calibration=True):
+    if _mode != "binaural_recording":
+        initialize_devices(mode="binaural_recording")
+    level = sound.level
+    rec = play_and_record(speaker_nr, sound, compensate_delay, apply_calibration)
+    iid = rec.left.level - rec.right.level
+    rec.level = level  # correct for level attenuation
+    rec.left.level += iid  # keep interaural intensity difference
+    return rec
+
+
 def play_and_record(speaker_nr, sig, compensate_delay=True,
                     apply_calibration=False):
     """
@@ -802,6 +859,7 @@ def play_and_record(speaker_nr, sig, compensate_delay=True,
     set_variable(variable="playbuflen", value=sig.nsamples, proc="RX8s")
     if compensate_delay:
         n_delay = get_recording_delay(play_device="RX8", rec_device="RP2")
+        n_delay += 50  # make the delay a bit larger, just to be sure
     else:
         n_delay = 0
     set_variable(variable="playbuflen", value=sig.nsamples, proc="RX8s")

@@ -10,11 +10,12 @@ from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from freefield import camera
 import pandas as pd
+import logging
 
 if "win" in platform:
     import win32com.client
 else:
-    print("#######You seem to not be running windows as your OS. Working with"
+    logging.warning("#######You seem to not be running windows as your OS. Working with"
           "TDT devices is only supported on windows!#######")
 
 # define global variables:

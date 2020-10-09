@@ -2,7 +2,7 @@ import time
 from pathlib import Path
 import glob
 from copy import deepcopy
-import collections
+from collections import Counter
 import numpy as np
 import slab
 from sys import platform
@@ -16,7 +16,7 @@ if "win" in platform:
     import win32com.client
 else:
     logging.warning("#######You seem to not be running windows as your OS. Working with"
-          "TDT devices is only supported on windows!#######")
+                    "TDT devices is only supported on windows!#######")
 
 # define global variables:
 _verbose = True  # determines if feedback is printed out
@@ -35,58 +35,56 @@ _rec_tresh = 65  # treshold in dB above which recordings are not rejected
 _fix_ele = 0  # fixation points' elevation
 _fix_azi = 0  # fixation points' azimuth
 _fix_acc = 10  # accuracy for determining if subject looks at fixation point
+_models = ["RX8", "RP2"]  # TDT devices that are supported
 
 
-def initialize_devices(ZBus=False, RX81_file=None, RX82_file=None,
-                       RP2_file=None, RX8_file=None, cam=False,
-                       connection='GB', mode=None):
+
+def initialize_devices(devices, zbus=False, connection='GB'):
     """
+    Establish conncetion to a list of TDT-devices.
+
     Initialize the different TDT-devices. The input for ZBus and cam is True
     or False, depending on whether you want to use ZBus triggering and the
     cameras or not. The input for the other devices has to be a string with the
     full path to a .rcx file which will be used to initialize the processor.
     Use the argument RX8_file to initialize RX81 and RX82 with the same file.
     Initialzation will take a few seconds per device
+
+    Args:
+        devices (list of tuples): a list of tuples, each of which corresponds to one device and
+                                  contains the device name, mode and the rcx-file that runs on it
+        zbus (bool): if true, use the ZBus interface to send triggers. If false only software
+                     triggers can be used.
+    Returns:
+        dict: initialized devices
+
     """
-    # TODO: set speakers to 0 when intializing setup??
-    global _procs, _warning, _signal, _response
-    set_samplerate(_samplerate)
-    if not _speaker_config:
-        raise ValueError("Please set device to 'arc' or "
-                         "'dome' before initialization!")
-    printv('Initializing TDT rack.')
-    RX81, RX82, RP2, ZB = None, None, None, None
-    if mode is not None:
-        if ZBus or RX81_file or RX82_file or RX8_file or RP2_file or cam:
-            raise ValueError("You cant initialize using a mode and specifying"
-                             ".rcx files at the same time!")
-        else:
-            RX81_file, RX82_file, RP2_file, ZBus, cam = _files_from_mode(mode)
-    if RX8_file:  # use this file for both processors
-        RX81_file, RX82_file = RX8_file, RX8_file
-    if RX81_file:
-        RX81 = _initialize_processor(device_type='RX8',
-                                     rcx_file=str(RX81_file), index=1,
-                                     connection=connection)
-    if RX82_file:
-        RX82 = _initialize_processor(device_type='RX8',
-                                     rcx_file=str(RX82_file), index=2,
-                                     connection=connection)
-    if RP2_file:
-        RP2 = _initialize_processor(device_type='RP2',
-                                    rcx_file=str(RP2_file), index=1, connection=connection)
-    if ZBus:
-        ZB = _initialize_processor(device_type='ZBus')
-    if cam:
-        camera.init()
-    proc_tuple = collections.namedtuple('TDTrack', 'ZBus RX81 RX82 RP2')
-    _procs = proc_tuple(ZBus=ZB, RX81=RX81, RX82=RX82, RP2=RP2)
-    # sound to signal a warning:
-    _warning = slab.Sound.clicktrain(duration=0.4).data.flatten()
-    # sound to signal the start and end of an experiment
-    _signal = slab.Sound.read(_location/"localization_test_start.wav").channel(0)
-    # template for output from localization tests
-    _response = pd.DataFrame(columns=["ele_target", "azi_target", "ele_response", "azi_response"])
+    global _procs
+    logging.info('Initializing TDT devices, this may take a moment ...')
+    _procs = dict()
+    models = []
+    for name, model, circuit in devices:
+        models.append(model)  # advance index if several devices of same model are used
+        index = Counter(models)[model] + 1
+        _procs[name] = _initialize_device(model=model, circuit=circuit,
+                                          connection=connection, index=index)
+    return _procs
+
+
+def initialize_device(model, circuit, connection, index):
+    try:
+        RP = win32com.client.Dispatch('RPco.X')
+    except win32com.client.pythoncom.com_error as err:
+        raise ValueError(err)
+    connected = 0
+    if model.upper() == "RP2":
+        connected = RP.ConnectRP2(connection, index)
+    elif model.upper() == "RX8":
+        connected = RP.ConnectRX8(connection, index)
+
+
+    pass
+
 
 def _initialize_processor(device_type=None, rcx_file=None, index=1,
                           connection='GB'):

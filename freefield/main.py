@@ -2,24 +2,15 @@ import time
 from pathlib import Path
 import glob
 from copy import deepcopy
-from collections import Counter
 import numpy as np
 import slab
-from sys import platform
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from freefield import camera
 import pandas as pd
 import logging
+logging.basicConfig(level=logging.WARNING)
 
-if "win" in platform:
-    import win32com.client
-else:
-    logging.warning("#######You seem to not be running windows as your OS. Working with"
-                    "TDT devices is only supported on windows!#######")
-
-# define global variables:
-_verbose = True  # determines if feedback is printed out
 _speaker_config = None  # either "dome" or "arc"
 _freq_calibration_file = None  # file name of the saved calibration filters
 _lvl_calibration_file = None  # file name of the saved level calibration
@@ -27,7 +18,8 @@ _calibration_freqs = None  # filters for frequency equalization
 _calibration_lvls = None  # calibration to equalize levels
 _speaker_table = None  # numbers and coordinates of all loudspeakers
 _procs = None  # list of active processors
-_location = Path(__file__).resolve().parents[0]  # package folder
+# use same machanism as in slab:
+_dir = Path(__file__).resolve().parents[0].parents[0]  # package folder
 _samplerate = 48828.125  # default samplerate for generating sounds etc.
 _mode = None  # mode at which the setup is currently running
 _print_list = []  # last messages printed by the printv function
@@ -35,150 +27,6 @@ _rec_tresh = 65  # treshold in dB above which recordings are not rejected
 _fix_ele = 0  # fixation points' elevation
 _fix_azi = 0  # fixation points' azimuth
 _fix_acc = 10  # accuracy for determining if subject looks at fixation point
-_models = ["RX8", "RP2"]  # TDT devices that are supported
-
-
-
-def initialize_devices(devices, zbus=False, connection='GB'):
-    """
-    Establish conncetion to a list of TDT-devices.
-
-    Initialize the different TDT-devices. The input for ZBus and cam is True
-    or False, depending on whether you want to use ZBus triggering and the
-    cameras or not. The input for the other devices has to be a string with the
-    full path to a .rcx file which will be used to initialize the processor.
-    Use the argument RX8_file to initialize RX81 and RX82 with the same file.
-    Initialzation will take a few seconds per device
-
-    Args:
-        devices (list of tuples): a list of tuples, each of which corresponds to one device and
-                                  contains the device name, mode and the rcx-file that runs on it
-        zbus (bool): if true, use the ZBus interface to send triggers. If false only software
-                     triggers can be used.
-    Returns:
-        dict: initialized devices
-
-    """
-    global _procs
-    logging.info('Initializing TDT devices, this may take a moment ...')
-    _procs = dict()
-    models = []
-    for name, model, circuit in devices:
-        models.append(model)  # advance index if several devices of same model are used
-        index = Counter(models)[model] + 1
-        _procs[name] = _initialize_device(model=model, circuit=circuit,
-                                          connection=connection, index=index)
-    return _procs
-
-
-def initialize_device(model, circuit, connection, index):
-    try:
-        RP = win32com.client.Dispatch('RPco.X')
-    except win32com.client.pythoncom.com_error as err:
-        raise ValueError(err)
-    connected = 0
-    if model.upper() == "RP2":
-        connected = RP.ConnectRP2(connection, index)
-    elif model.upper() == "RX8":
-        connected = RP.ConnectRX8(connection, index)
-
-
-    pass
-
-
-def _initialize_processor(device_type=None, rcx_file=None, index=1,
-                          connection='GB'):
-    if device_type.lower() == 'zbus':
-        try:
-            ZB = win32com.client.Dispatch('ZBUS.x')
-        except win32com.client.pythoncom.com_error as err:
-            raise ValueError(err)
-        if ZB.ConnectZBUS(connection):
-            printv('Connected to ZBUS.')
-        else:
-            raise ConnectionError('Failed to connect to ZBUS.')
-        return ZB
-    else:  # it's an RP2 or RX8
-        try:  # load RPco.x
-            RP = win32com.client.Dispatch('RPco.X')
-        except win32com.client.pythoncom.com_error as err:
-            raise ValueError(err)
-        if device_type == "RP2":
-            if RP.ConnectRP2(connection, index):  # connect to device
-                printv("Connected to RP2")
-            else:
-                raise ConnectionError('Failed to connect to RP2.')
-        elif device_type == "RX8":
-            if RP.ConnectRX8(connection, index):  # connect to device
-                printv("Connected to RX8")
-            else:
-                raise ConnectionError('Failed to connect to RX8.')
-        else:
-            raise ValueError('Unknown device type!')
-        if not RP.ClearCOF():
-            raise ValueError('ClearCOF failed')
-        if not rcx_file[-4:] == '.rcx':
-            rcx_file += '.rcx'
-        if RP.LoadCOF(rcx_file):
-            printv(f'Circuit {rcx_file} loaded.')
-        else:
-            raise ValueError(f'Failed to load {rcx_file}.')
-        if RP.Run():
-            printv('Circuit running')
-        else:
-            raise ValueError(f'Failed to run {rcx_file}.')
-        return RP
-
-
-def _files_from_mode(mode):
-    global _mode
-    if mode == "play_and_record":
-        RP2_file = _location.parents[0]/"rcx"/Path("rec_buf.rcx")
-        RX81_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
-        RX82_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
-        ZBus, cam = True, False
-        _mode = "play_and_record"
-    elif mode == "localization_test_freefield":
-        RP2_file = _location.parents[0] / Path("rcx/button.rcx")
-        RX81_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
-        RX82_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
-        ZBus, cam = True, True
-        _mode = "localization_test_freefield"
-    elif mode == "localization_test_headphones":
-        RP2_file = _location.parents[0] / Path("rcx/bi_play_buf.rcx")
-        RX81_file = _location.parents[0] / Path("rcx/leds.rcx")
-        RX82_file = _location.parents[0] / Path("rcx/leds.rcx")
-        ZBus, cam = True, True
-        _mode = "localization_test_headphones"
-    elif mode == "camera_calibration":
-        RP2_file = _location.parents[0] / Path("rcx/button.rcx")
-        RX81_file = _location.parents[0] / Path("rcx/leds.rcx")
-        RX82_file = _location.parents[0] / Path("rcx/leds.rcx")
-        ZBus, cam = True, True
-        _mode = "camera_calibration"
-    elif mode == "binaural_recording":
-        RP2_file = _location.parents[0]/"rcx"/Path("bi_rec_buf.rcx")
-        RX81_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
-        RX82_file = _location.parents[0]/"rcx"/Path("play_buf.rcx")
-        _mode = "binaural_recording"
-        ZBus, cam = True, False
-    else:
-        raise ValueError("mode % s is not a valid input! Options are: \n"
-                         "play_and_record, localization_test, \n"
-                         "camera_calibration, binaural_recording" % (mode))
-    printv("Setting mode to %s" % (mode))
-    return RX81_file, RX82_file, RP2_file, ZBus, cam
-
-
-def halt():
-    'Halt all processors in the rack (all elements that have a Halt method).'
-    for proc_name in _procs._fields:
-        proc = getattr(_procs, proc_name)
-        if hasattr(proc, 'Halt'):
-            printv(f'Halting {proc_name}.')
-            proc.Halt()
-    if camera._cam_type is not None:
-        camera.halt()
 
 
 def set_speaker_config(setup='arc'):
@@ -218,50 +66,6 @@ def set_speaker_config(setup='arc'):
         printv('Setup not level-calibrated...')
 
 
-def set_variable(variable, value, proc='RX8s'):
-    '''
-        Set a variable on a processor to a value. Setting will silently fail if
-        variable does not exist in the rcx file. The function will use
-        SetTagVal or WriteTagV correctly, depending on whether
-        len(value) == 1 or is > 1. proc can be
-        'RP2', 'RX81', 'RX82', 'RX8s', or "all", or the index of the device
-        in _procs (0 = RP2, 1 = RX81, 2 = RX82), or a list of indices.
-        'RX8s' sends the value to all RX8 processors.
-        Example:
-        set_variable('stimdur', 90, proc='RX8s')
-        '''
-    if isinstance(proc, str):
-        if proc == "all":
-            proc = [_procs._fields.index('RX81'), _procs._fields.index(
-                'RX82'), _procs._fields.index('RP2')]
-        elif proc == 'RX8s':
-            proc = [_procs._fields.index('RX81'), _procs._fields.index('RX82')]
-        else:
-            proc = [_procs._fields.index(proc)]
-    elif isinstance(proc, int) or isinstance(proc, float):
-        proc = [int(proc)]
-    elif isinstance(proc, list):
-        if not isinstance(all(proc), int):
-            raise ValueError("proc must be either a string, an integer or a"
-                             "list of integers!")
-    else:
-        raise ValueError("proc must be either a string, an integer or a "
-                         "list of integers!")
-
-    for p in proc:
-        if isinstance(value, (list, np.ndarray)):
-            flag = _procs[p]._oleobj_.InvokeTypes(
-                15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)),
-                variable, 0, value)
-            printv(f'Set {variable} on {_procs._fields[p]}.')
-        else:
-            flag = _procs[p].SetTagVal(variable, value)
-            printv(f'Set {variable} to {value} on {_procs._fields[p]}.')
-    if flag == 0:
-        printv("Unable to set tag '%s' to value %s on device %s"
-               % (variable, value, proc))
-
-
 def set_samplerate(x):
     global _samplerate
     _samplerate = x
@@ -270,26 +74,7 @@ def set_samplerate(x):
            "filters etc. to %s Hz" % (x))
 
 
-def get_variable(variable=None, n_samples=1, proc='RX81', supress_print=False):
-    '''
-        Get the value of a variable from a processor. Returns None if variable
-        does not exist in the rco file. proc can be 'RP2', 'RX81', 'RX82', or
-        the index of the device in _procs (0 = RP2, 1 = RX81, 2 = RX82).
-        Example:
-        get_variable('playing', proc='RX81')
-        '''
-    if isinstance(proc, str):
-        proc = _procs._fields.index(proc)
-    if n_samples > 1:
-        value = np.asarray(_procs[proc].ReadTagV(variable, 0, n_samples))
-        # if value == 0:
-        # printv(f'{variable} from {_procs._fields[proc]} returned 0 \n'
-        # 'this is probably an error...')
-    else:
-        value = _procs[proc].GetTagVal(variable)
-    if not supress_print:
-        printv(f'Got {variable} from {_procs._fields[proc]}.')
-    return value
+
 
 
 def trigger(trig='zBusA', proc=None):
@@ -530,6 +315,7 @@ def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=Fa
     test! After every trial the listener has to point to the middle speaker at
     0 elevation and azimuth and press the button to iniciate the next trial.
     """
+    # TODO: one function for fundamental trial-unit?
     if not _mode == "localization_test_freefield":
         initialize_devices(mode="localization_test_freefield")
     if camera._cal is None:
@@ -542,6 +328,7 @@ def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=Fa
     seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
     response = pd.DataFrame(columns=["ele_target", "azi_target", "ele_response", "azi_response"])
     start = slab.Sound.read("localization_test_start.wav").channel(0)
+    # could be one function:
     set_signal_and_speaker(signal=start, speaker=23, apply_calibration=False)
     trigger()
     wait_to_finish_playing()
@@ -550,7 +337,9 @@ def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=Fa
     while seq.n_remaining > 0:
         sound = slab.Sound.pinknoise(duration=duration)
         _, ch, proc_ch, azi, ele, bit, proc_bit = seq.__next__()
+        # TODO response into trial sequence
         trial = {"azi_target": azi, "ele_target": ele}
+        # give dictionary or list of variables ?
         set_variable(variable="chan", value=ch, proc="RX8%s" % int(proc_ch))
         set_variable(variable="chan", value=25, proc="RX8%s" % int(3-proc_ch))
         set_variable(variable="playbuflen", value=len(sound), proc="RX8s")

@@ -8,209 +8,201 @@ from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from freefield import camera
 import pandas as pd
+import datetime
+from freefield import DATADIR, Devices
 import logging
 logging.basicConfig(level=logging.WARNING)
+# default samplerate for generating sounds, filters etc.
+slab.Signal.set_default_samplerate(48828)
 
 _speaker_config = None  # either "dome" or "arc"
-_freq_calibration_file = None  # file name of the saved calibration filters
-_lvl_calibration_file = None  # file name of the saved level calibration
+_devices = None
 _calibration_freqs = None  # filters for frequency equalization
 _calibration_lvls = None  # calibration to equalize levels
 _speaker_table = None  # numbers and coordinates of all loudspeakers
-_procs = None  # list of active processors
-# use same machanism as in slab:
-_dir = Path(__file__).resolve().parents[0].parents[0]  # package folder
-_samplerate = 48828.125  # default samplerate for generating sounds etc.
-_mode = None  # mode at which the setup is currently running
-_print_list = []  # last messages printed by the printv function
 _rec_tresh = 65  # treshold in dB above which recordings are not rejected
 _fix_ele = 0  # fixation points' elevation
 _fix_azi = 0  # fixation points' azimuth
 _fix_acc = 10  # accuracy for determining if subject looks at fixation point
 
 
-def set_speaker_config(setup='arc'):
-    'Set the freefield setup to use (arc or dome).'
-    global _speaker_config, _calibration_freqs, _calibration_lvls, \
-        _speaker_table, _freq_calibration_file, _lvl_calibration_file
+def initialize_setup(setup, default_mode=None, device_list=None,
+                     zbus=True, connection="GB"):
+    """
+    Initialize the devices and load table and calibration for setup.
+
+    We are using two different 48-channel setups. A 3-dimensional 'dome' and
+    a horizontal 'arc'. For each setup there are a table describing the position
+    and channel of each loudspeaker as well as calibration files. This function
+    loads those files and stores them in global variables. This is necessary
+    for most of the other functions to work.
+
+    Args:
+        setup (str): 'dome' or 'arc'
+    """
+
+    # TODO: put level and frequency equalization in one common file
+    global _speaker_config, _calibration_freqs, _calibration_lvls, _speaker_table, _devices
+    # initialize devices
+    _devices = Devices()
+    if bool(device_list) == bool(default_mode):
+        raise ValueError("You have to specify a device_list OR a default_mode")
+    if device_list:
+        _devices.initialize_devices(device_list, zbus, connection)
+    elif default_mode:
+        _devices.initialize_default(default_mode)
+    # get the correct speaker table and calibration files for the setup
     if setup == 'arc':
         _speaker_config = 'arc'
-        _freq_calibration_file = _location / Path('frequency_calibration_arc.npy')
-        _lvl_calibration_file = _location / Path('level_calibration_arc.npy')
-
-        table_file = _location / Path('speakertable_arc.txt')
+        freq_calibration_file = DATADIR/Path('frequency_calibration_arc.npy')
+        lvl_calibration_file = DATADIR/Path('level_calibration_arc.npy')
+        table_file = DATADIR/Path('speakertable_arc.txt')
     elif setup == 'dome':
         _speaker_config = 'dome'
-        _freq_calibration_file = _location / Path('frequency_calibration_dome.npy')
-        _lvl_calibration_file = _location / Path('level_calibration_dome.npy')
-        table_file = _location / Path('speakertable_dome.txt')
+        freq_calibration_file = DATADIR/Path('frequency_calibration_dome.npy')
+        lvl_calibration_file = DATADIR/Path('level_calibration_dome.npy')
+        table_file = DATADIR/Path('speakertable_dome.txt')
     else:
         raise ValueError("Unknown device! Use 'arc' or 'dome'.")
-    printv(f'Speaker configuration set to {setup}.')
+    logging.info(f'Speaker configuration set to {setup}.')
     # lambdas provide default values of 0 if azi or ele are not in the file
     _speaker_table = np.loadtxt(fname=table_file, delimiter=',', skiprows=1,
                                 converters={3: lambda s: float(s or 0),
                                             4: lambda s: float(s or 0)})
     idx = np.where(_speaker_table == -999.)
-    _speaker_table[idx[0], idx[1]] = None  # change the placeholder -999 to NaN
-    printv('Speaker table loaded.')
-    if _freq_calibration_file.exists():
-        _calibration_freqs = slab.Filter.load(_freq_calibration_file)
-        printv('Frequency-calibration filters loaded.')
+    _speaker_table[idx[0], idx[1]] = None  # translate -999 to None
+    logging.info('Speaker table loaded.')
+    if freq_calibration_file.exists():
+        _calibration_freqs = slab.Filter.load(freq_calibration_file)
+        logging.info('Frequency-calibration filters loaded.')
     else:
-        printv('Setup not frequency-calibrated...')
-    if _lvl_calibration_file.exists():
-        _calibration_lvls = np.load(_lvl_calibration_file)
-        printv('Level-calibration loaded.')
+        logging.warning('Setup not frequency-calibrated...')
+    if lvl_calibration_file.exists():
+        _calibration_lvls = np.load(lvl_calibration_file)
+        logging.info('Level-calibration loaded.')
     else:
-        printv('Setup not level-calibrated...')
+        logging.warning('Setup not level-calibrated...')
 
 
-def set_samplerate(x):
-    global _samplerate
-    _samplerate = x
-    slab.Signal.set_default_samplerate(x)
-    printv("Setting the default samplerate for generating sounds,"
-           "filters etc. to %s Hz" % (x))
+def wait_to_finish_playing(proc=['RX81', 'RX82'], tagname="playback"):
+    """
+    Busy wait until the devices finished playing.
 
+    For this function to work, the rcx-circuit must have a tag that is 1
+    while output is generated and 0 otherwise. The default name for this
+    kind of tag is "playback". "playback" is read repeatedly for each device
+    followed by a short sleep if the value is 1.
 
-
-
-
-def trigger(trig='zBusA', proc=None):
-    '''
-        Send a trigger. Options are SoftTrig numbers, "zBusA" or "zBusB".
-        For using the software trigger a processor must be specified by name
-        or index in _procs. Initialize the zBus befor sending zBus triggers.
-        '''
-    if isinstance(trig, (int, float)):
-        if not proc:
-            raise ValueError('Proc needs to be specified for SoftTrig!')
-        if isinstance(proc, str):
-            proc = _procs._fields.index(proc)  # name to index
-        _procs[proc].SoftTrg(trig)
-        printv(f'SoftTrig {trig} sent to {_procs._fields[proc]}.')
-    elif 'zbus' in trig.lower():
-        if not _procs.ZBus:
-            raise ValueError('ZBus needs to be initialized first!')
-        if trig.lower() == "zbusa":
-            _procs.ZBus.zBusTrigA(0, 0, 20)
-            printv('zBusA trigger sent.')
-        elif trig.lower() == "zbusb":
-            _procs.ZBus.zBusTrigB(0, 0, 20)
-
-    else:
-        raise ValueError("Unknown trigger type! Must be 'soft', "
-                         "'zBusA' or 'zBusB'!")
-
-
-def wait_to_finish_playing(proc='RX8s', tagname="playback"):
-    '''
-    Busy wait as long as sound is played from the processors. The .rcx file
-    must contain a tag (default name is playback) that has the value 1 while
-    sound is being played and 0 otherwise.
-        '''
-    if proc == 'RX8s':
-        proc = ['RX81', 'RX82']
-    elif proc == 'all':
-        proc = ['RX81', 'RX82', 'RP2']
-    else:
+    Args:
+        proc (str, list of str): name(s) of the processor(s) to wait for.
+        tag (str): name of the tag that signals if something is played
+    """
+    if isinstance(proc, str):
         proc = [proc]
-    printv(f'Waiting for {tagname} on {proc}.')
-    while any(get_variable(variable=tagname, n_samples=1, proc=processor,
-                           supress_print=True) for processor in proc):
+    logging.info(f'Waiting for {tagname} on {proc}.')
+    while any(_devices.gettag(tagname, n_samples=1, proc=p) for p in proc):
         time.sleep(0.01)
-    printv('Done waiting.')
+    logging.info('Done waiting.')
 
 
-def speaker_from_direction(azimuth=0, elevation=0):
-    '''
-        Returns the speaker, channel, and RX8 index that the speaker
-        at a given azimuth and elevation is attached to.
-        '''
-    row = int(np.argwhere(np.logical_and(
-        _speaker_table[:, 3] == azimuth, _speaker_table[:, 4] == elevation)))
+def get_speaker(index=None, coordinates=None):
+    """
+    Either return the speaker at given coordinates (azimuth, elevation) or the
+    speaker with a specific index number.
+
+    Args:
+        index (int): index number of the speaker
+        coordinates (list of floats): azimuth and elevation of the speaker
+
+    Returns:
+        int: index number of the speaker (0 to 47)
+        int: channel of the device the speaker is attached to (1 to 24)
+        int: index of the device the speaker is attached to (1 or 2)
+        float: azimuth angle of the target speaker
+        float: elevation angle of the target speaker
+        int: integer value of the bitmask for the LED at speaker position
+        int: index of the device the LED is attached to (1 or 2)
+    """
+    # TODO: should the proc be handled with name instead of index nr?
+    if bool(index) == bool(coordinates):
+        raise ValueError("You have to specify a the index OR coordinates of the speaker!")
+    if index:
+        row = int(np.argwhere(_speaker_table[:, 0] == index))
+    elif coordinates:
+        if len(coordinates) != 2:
+            raise ValueError("Coordinates must have two elements: azimuth and elevation!")
+        row = int(np.argwhere(np.logical_and(
+            _speaker_table[:, 3] == coordinates[0], _speaker_table[:, 4] == coordinates[1])))
+    return _convert_tablerow(row)
+
+
+def _convert_tablerow(row):
+    """
+    Convert the data from table to the correct format for each variable
+    """
     speaker = int(_speaker_table[row, 0])
     channel = int(_speaker_table[row, 1])
-    rx8_speaker = int(_speaker_table[row, 2])
-    bitval = _speaker_table[row, 5]
-    rx8_bit = _speaker_table[row, 6]
-    if bitval != bitval:
-        bitval = 0
-    else:
-        bitval = int(bitval)
-    rx8_bit = _speaker_table[row, 6]
-    if rx8_bit != rx8_bit:
-        rx8_bit = 0
-    else:
-        rx8_bit = int(rx8_bit)
-
-    return speaker, channel, rx8_speaker, azimuth, elevation, bitval, rx8_bit
-
-
-def speaker_from_number(speaker):
-    '''
-        Returns the channel, RX8 index, azimuth, and elevation
-        that the speaker with a given number (1-48) is attached to.
-        '''
-    row = int(np.argwhere(_speaker_table[:, 0] == speaker))
-    channel = int(_speaker_table[row, 1])
-    rx8_speaker = int(_speaker_table[row, 2])
     azimuth = _speaker_table[row, 3]
     elevation = _speaker_table[row, 4]
+    chidx = int(_speaker_table[row, 2])
     bitval = _speaker_table[row, 5]
+    bitidx = _speaker_table[row, 6]
     if bitval != bitval:
-        bitval = 0
+        bitval, bitidx = 0, 0
     else:
         bitval = int(bitval)
-    rx8_bit = _speaker_table[row, 6]
-    if rx8_bit != rx8_bit:
-        rx8_bit = 0
-    else:
-        rx8_bit = int(rx8_bit)
+        bitidx = int(bitidx)
 
-    return speaker, channel, rx8_speaker, azimuth, elevation, bitval, rx8_bit
+    return speaker, channel, chidx, azimuth, elevation, bitval, bitidx
 
 
-def speakers_from_list(speakers):
+def get_speakerlist(speakers: list) -> list:
     """
-    Get a subset of speakers from a list that contains either speaker numbers
-    of tuples with (azimuth, elevation) of each speaker
+    Specify a list of either indices or coordinates and call get_speaker()
+    for each element of the list.
+
+    Args:
+        speakers (list or list of lists): indices or coordinates of speakers.
+
+    Returns:
+        list of lists: rows from _speaker_table corresponding to the list.
+            each sub list contains all the variable returned by get_speaker()
     """
-    if not isinstance(speakers, list) and not isinstance(speakers, np.ndarray):
-        raise ValueError("speakers mut be a list!")
-    if all(isinstance(x, int) for x in speakers) or all(isinstance(x, np.int64) for x in speakers):
-        speaker_list = [speaker_from_number(x) for x in speakers]
-    elif all(isinstance(x, tuple) for x in speakers) or all(isinstance(x, list) for x in speakers):
-        speaker_list = \
-            [speaker_from_direction(x[0], x[1]) for x in speakers]
-    else:
-        raise ValueError("the list of speakers must contain either \n"
-                         "integers (speaker numbers) or \n"
-                         "tuples (azimuth and elevation)")
+    if (all(isinstance(x, int) for x in speakers) or  # list contains indices
+            all(isinstance(x, np.int64) for x in speakers)):
+        speaker_list = [get_speaker(index=i) for i in speakers]
+    elif (all(isinstance(x, tuple) for x in speakers) or  # list contains coords
+            all(isinstance(x, list) for x in speakers)):
+        speaker_list = [get_speaker(coordinates=c) for c in speakers]
     return speaker_list
 
 
 def all_leds():
     '''
-    Get speaker, RX8 index, and bitmask of all speakers which have a LED
-    attached --> won't be necessary once all speakers have LEDs
+    Temporary hack: return all speakers from the table which have a LED attached
     '''
     idx = np.where(_speaker_table[:, 5] == _speaker_table[:, 5])[0]
-    return speakers_from_list(idx)
+    return get_speakerlist(idx)
 
 
-def shift_setup(delta_ele=0, delta_azi=0):
-    '''
-    Shift the whole speaker setup by adding delte_ele and delta_azi to the
-    coordinates of each speaker. Useful when the listeners position is changed.
-    To reverse changes reload the table by calling set_speaker_config.
-    '''
+def shift_setup(delta=(0, 0)):
+    """
+    Shift the setup (relative to the lister) by adding some delta value
+    in azimuth and elevation. This can be used when chaning the position of
+    the chair where the listener is sitting - moving the chair to the right
+    is equivalent to shifting the setup to the left. Changes are not saved to
+    the speaker table.
+
+    Args:
+        delta (tuple of floats): azimuth and elevation by which the setup is
+        shifted. Positive values mean shifting right/up, negative values
+        mean shiftig left/down
+    """
     global _speaker_table
-    _speaker_table[:, 3] += delta_azi
-    _speaker_table[:, 4] += delta_ele
-    printv("shifting the loudspeaker array by % s degree in azimuth / n"
-           "and % s degree in elevation" % (delta_azi, delta_ele))
+    _speaker_table[:, 3] += delta[0]  # azimuth
+    _speaker_table[:, 4] += delta[1]  # elevation
+    logging.info("shifting the loudspeaker array by % s degree in azimuth / n"
+                 "and % s degree in elevation" % (delta[0], delta[1]))
 
 
 def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=False):
@@ -221,22 +213,21 @@ def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=False):
         a tuple (azimuth, elevation).
         '''
     if isinstance(speaker, tuple):
-        speaker, channel, proc = \
-            speaker_from_direction(azimuth=speaker[0], elevation=speaker[1])
-    else:
-        speaker, channel, proc, azimuth, elevation, _, _ = speaker_from_number(
-            speaker)
-    signal_play = deepcopy(signal)
+        speaker, channel, chidx, azimuth, elevation, bitval, bitidx = \
+            get_speaker(coordinates=(speaker[0], speaker[1]))
+    elif isinstance(speaker, int):
+        speaker, channel, chidx, azimuth, elevation, bitval, bitidx = \
+            get_speaker(index=speaker)
+    toplay = deepcopy(signal)  # copy the signal so the original is not changed
     if apply_calibration:
-        if not _freq_calibration_file.exists():
-            raise FileNotFoundError('No calibration file found.'
-                                    'Please calibrate the speaker setup.')
-        printv('Applying calibration.')
-        signal_play.level *= _calibration_lvls[int(speaker)]
-        signal_play = _calibration_freqs.channel(
-            int(speaker)).apply(signal_play)
-    set_variable(variable='chan', value=channel, proc=proc)
-    set_variable(variable="data", value=signal_play.data, proc=proc)
+        if _calibration_freqs is None:
+            logging.warning("Setup is not calibrated!")
+        else:
+            logging.info('Applying calibration.')
+        toplay.level *= _calibration_lvls[int(speaker)]
+        toplay = _calibration_freqs.channel(
+            int(speaker)).apply(toplay)
+    _devices.write(['chan', 'data'], [channel, toplay.data], [proc, proc])
     # set the other channel to non existant
     set_variable(variable='chan', value=25, proc=3-proc)
 
@@ -288,19 +279,19 @@ def check_pose(target=None, var=10):
     """ Take an image and check if head is pointed to the target position +/- var.
     Returns True or False. NaN values are ignored."""
     if target is None:
-        target=(_fix_azi, _fix_ele)
+        target = (_fix_azi, _fix_ele)
     correct = True
     ele, azi = camera.get_headpose(convert=True, average=True, n_images=1)
     if azi is np.nan:
         pass
     else:
         if np.abs(ele-target[0]) > var:
-            correct=False
+            correct = False
     if ele is np.nan:
         pass
     else:
         if np.abs(ele-target[1]) > var:
-            correct=False
+            correct = False
     return correct
 
 
@@ -388,7 +379,7 @@ def localization_test_headphones(folder, speakers, n_reps=1, visual=False):
             initialize_devices(mode="localization_test_headphones")
         speakers = speakers_from_list(speakers)
         seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
-    if visual is True: # check if speakers have a LED
+    if visual is True:  # check if speakers have a LED
         if any(np.isnan([s[-1] for s in speakers])):
             raise ValueError("At least one of the selected speakers does not have a LED attached!")
     if camera._cal is None:
@@ -448,7 +439,6 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
     """
     # TODO: check filter shift compensation
     global _calibration_freqs, _calibration_lvls
-    import datetime
     printv('Starting calibration.')
     if not _mode == "play_and_record":
         initialize_devices(mode="play_and_record")
@@ -666,41 +656,3 @@ def play_and_record(speaker_nr, sig, compensate_delay=True,
                             n_samples=sig.nsamples+n_delay)[n_delay:]
         rec = slab.Binaural([recl, recr])
     return rec
-
-
-def _plot_equalization(target, signal, filt, speaker_nr, low_cutoff=50,
-                       high_cutoff=20000, bandwidth=1/8):
-    """
-    Make a plot to show the effect of the equalizing FIR-filter on the
-    signal in the time and frequency domain. The plot is saved to the log
-    folder (existing plots are overwritten)
-    """
-    row = speaker_from_number(speaker_nr)  # get the speaker
-    signal_filt = filt.apply(signal)  # apply the filter to the signal
-    fig, ax = plt.subplots(2, 2, figsize=(16., 8.))
-    fig.suptitle("Equalization Speaker Nr. %s at Azimuth: %s and "
-                 "Elevation: %s" % (speaker_nr, row[2], row[3]))
-    ax[0, 0].set(title="Power per ERB-Subband", ylabel="A")
-    ax[0, 1].set(title="Time Series", ylabel="Amplitude in Volts")
-    ax[1, 0].set(title="Equalization Filter Transfer Function",
-                 xlabel="Frequency in Hz", ylabel="Amplitude in dB")
-    ax[1, 1].set(title="Filter Impulse Response",
-                 xlabel="Time in ms", ylabel="Amplitude")
-    # get level per subband for target, signal and filtered signal
-    fbank = slab.Filter.cos_filterbank(
-        1000, bandwidth, low_cutoff, high_cutoff, signal.samplerate)
-    center_freqs, _, _ = slab.Filter._center_freqs(low_cutoff, high_cutoff, bandwidth)
-    center_freqs = slab.Filter._erb2freq(center_freqs)
-    for data, name, color in zip([target, signal, signal_filt],
-                                 ["target", "signal", "filtered"],
-                                 ["red", "blue", "green"]):
-        levels = fbank.apply(data).level
-        ax[0, 0].plot(center_freqs, levels, label=name, color=color)
-        ax[0, 1].plot(data.times*1000, data.data, alpha=0.5, color=color)
-    ax[0, 0].legend()
-    w, h = filt.tf(plot=False)
-    ax[1, 0].semilogx(w, h, c="black")
-    ax[1, 1].plot(filt.times, filt.data, c="black")
-    fig.savefig(_location.parent/Path("log/speaker_%s_equalization.pdf"
-                                      % (speaker_nr)), dpi=800)
-    plt.close()

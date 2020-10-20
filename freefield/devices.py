@@ -234,7 +234,7 @@ class Devices(object):
             except win32com.client.pythoncom.com_error as err:
                 raise ValueError(err)
         else:
-            RP = COM()
+            RP = _COM()
         logging.info(f'Connecting to {model} processor ...')
         connected = 0
         if model.upper() == 'RP2':
@@ -268,7 +268,7 @@ class Devices(object):
             except win32com.client.pythoncom.com_error as err:
                 logging.warning(err)
         else:
-            ZB = COM()
+            ZB = _COM()
         if ZB.ConnectZBUS(connection):
             logging.info('Connected to ZBUS.')
         else:
@@ -276,11 +276,11 @@ class Devices(object):
         return ZB
 
 
-class COM():
+class _COM():
     """
     Simulate a TDT processor for testing
     """
-    def ConnectRP2(connection, index):
+    def ConnectRP2(self, connection, index):
         if connection not in ["GB", "USB"]:
             return 0
         if not isinstance(index, int):
@@ -288,7 +288,7 @@ class COM():
         else:
             return 1
 
-    def ConnectRX8(connection, index):
+    def ConnectRX8(self, connection, index):
         if connection not in ["GB", "USB"]:
             return 0
         if not isinstance(index, int):
@@ -296,7 +296,7 @@ class COM():
         else:
             return 1
 
-    def ConnectRM1(connection, index):
+    def ConnectRM1(self, connection, index):
         if connection not in ["GB", "USB"]:
             return 0
         if not isinstance(index, int):
@@ -304,7 +304,7 @@ class COM():
         else:
             return 1
 
-    def ConnectRX6(connection, index):
+    def ConnectRX6(self, connection, index):
         if connection not in ["GB", "USB"]:
             return 0
         if not isinstance(index, int):
@@ -312,28 +312,28 @@ class COM():
         else:
             return 1
 
-    def ClearCOF():
+    def ClearCOF(self):
         return 1
 
-    def LoadCOF(circuit):
+    def LoadCOF(self, circuit):
         if not os.path.isfile(circuit):
             return 0
         else:
             return 1
 
-    def Run():
+    def Run(self):
         return 1
 
-    def ConnectZBUS(connection):
+    def ConnectZBUS(self, connection):
         if connection not in ["GB", "USB"]:
             return 0
         else:
             return 1
 
-    def Halt():
+    def Halt(self):
         return 1
 
-    def SetTagVal(tag, value):
+    def SetTagVal(self, tag, value):
         if not isinstance(tag, str):
             return 0
         if not isinstance(value, (int, float)):
@@ -341,7 +341,7 @@ class COM():
         else:
             return 1
 
-    def ReadTagV(tag, nstart, n_samples):
+    def ReadTagV(self, tag, nstart, n_samples):
         if not isinstance(tag, str):
             return 0
         if not isinstance(nstart, int):

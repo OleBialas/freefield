@@ -1,11 +1,15 @@
 from sys import platform
 import numpy as np
 from freefield import DATADIR
+import os.path
+import random
 import logging
 from collections import Counter
 if 'win' in platform:
     import win32com.client
+    _win = True
 else:
+    _win = False
     logging.warning('You seem to not be running windows as your OS...\n'
                     'Working with TDT devices is only supported on Windows!')
 
@@ -55,7 +59,8 @@ class Devices(object):
             # advance index if a model appears more then once
             models.append(model)
             index = Counter(models)[model] + 1
-            self._procs[name] = self._initialize_proc(model, circuit, connection, index)
+            self._procs[name] = self._initialize_proc(model, circuit,
+                                                      connection, index)
         if zbus:
             self._zbus = self._initialze_zbus(connection)
         if self._mode is None:
@@ -71,7 +76,7 @@ class Devices(object):
         of the toolbox and include:
 
         'play_rec': play sounds using two RX8s and record them with a RP2
-        'play_birec': same as 'play_rec' but record from two microphone channels
+        'play_birec': same as 'play_rec' but record from 2 microphone channels
         'loctest_freefield': sound localization test under freefield conditions
         'loctest_headphones': localization test with headphones
         'cam_calibration': calibrate cameras for headpose estimation
@@ -109,32 +114,33 @@ class Devices(object):
         """
         Write data to device(s).
 
-        Set a tag on one or multiple processors to a given value. Processors are
-        adressed by their name (the key in the _procs dictionary). The same tag
-        can be set to the same value on multiple processors by giving a list of
-        names. One can set multiple tags on several devices by giving lists
-        for variable, value and procs (procs can be a list of lists, see example).
+        Set a tag on one or multiple processors to a given value. Processors
+        are adressed by their name (the key in the _procs dictionary). The same
+        tag can be set to the same value on multiple processors by giving a
+        list of names. One can set multiple tags by giving lists for variable,
+        value and procs (procs can be a list of lists, see example).
 
         This function will call SetTagVal or WriteTagV depending on whether
         value is a single integer or float or an array. If the tag could
         not be set (there are different resons why that might be the case) a
-        warning is triggered. CAUTION: If the data type of the value arg does not
-        match the data type of the tag, write might be successfull but
+        warning is triggered. CAUTION: If the data type of the value arg does
+        not match the data type of the tag, write might be successfull but
         the processor might behave strangely.
 
         Args:
-            tag (str): name of the tag in the rcx-circucit where value is written to
+            tag (str): name of the tag in the rcx-circucit where value is
+                written to
             value (int, float, list): value that is written to the tag. Must
-                                            match the data type of the tag.
+                match the data type of the tag.
             procs (str, list): name(s) of the device(s) to write to
         Examples:
             >>> # set the value of tag 'data' to array data on RX81 & RX82 and
-            >>> # set the value of tag 'response' to 0 on RP2 :
-            >>> settag(['data', 'response'], [data, 0], [['RX81', 'RX82'], 'RP2'])
+            >>> # set the value of tag 'x' to 0 on RP2 :
+            >>> settag(['data', 'x'], [data, 0], [['RX81', 'RX82'], 'RP2'])
         """
         if isinstance(tag, list):
             if not len(tag) == len(value) == len(procs):
-                raise ValueError("Lists for tag, value and procs must be same length!")
+                raise ValueError("tag, value and procs must be same length!")
         else:
             tag, value = [tag], [value]
             if isinstance(procs, str):
@@ -145,7 +151,7 @@ class Devices(object):
             raise ValueError('Can not find some of the specified processors!')
         for t, v, proc in zip(tag, value, procs):
             for p in procs:
-                if isinstance(value, (list, np.ndarray)):
+                if isinstance(value, (list, np.ndarray)):  # TODO: fix this
                     flag = self._procs[p]._oleobj_.InvokeTypes(
                         15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)),
                         t, 0, v)
@@ -171,7 +177,6 @@ class Devices(object):
         Returns:
             type (int, float, list): value read from the tag
         """
-        # TODO: is it necessary to specify n_samples, does reading return a flag?
         if n_samples > 1:
             value = np.asarray(self._procs[proc].ReadTagV(tag, 0, n_samples))
         else:
@@ -223,10 +228,13 @@ class Devices(object):
 
     @staticmethod
     def _initialize_proc(model, circuit, connection, index):
-        try:
-            RP = win32com.client.Dispatch('RPco.X')
-        except win32com.client.pythoncom.com_error as err:
-            raise ValueError(err)
+        if _win:
+            try:
+                RP = win32com.client.Dispatch('RPco.X')
+            except win32com.client.pythoncom.com_error as err:
+                raise ValueError(err)
+        else:
+            RP = COM()
         logging.info(f'Connecting to {model} processor ...')
         connected = 0
         if model.upper() == 'RP2':
@@ -254,12 +262,93 @@ class Devices(object):
 
     @staticmethod
     def _initialze_zbus(connection):
-        try:
-            ZB = win32com.client.Dispatch('ZBUS.x')
-        except win32com.client.pythoncom.com_error as err:
-            logging.warning(err)
+        if _win:
+            try:
+                ZB = win32com.client.Dispatch('ZBUS.x')
+            except win32com.client.pythoncom.com_error as err:
+                logging.warning(err)
+        else:
+            ZB = COM()
         if ZB.ConnectZBUS(connection):
             logging.info('Connected to ZBUS.')
         else:
             logging.warning('Failed to connect to ZBUS.')
         return ZB
+
+
+class COM():
+    """
+    Simulate a TDT processor for testing
+    """
+    def ConnectRP2(connection, index):
+        if connection not in ["GB", "USB"]:
+            return 0
+        if not isinstance(index, int):
+            return 0
+        else:
+            return 1
+
+    def ConnectRX8(connection, index):
+        if connection not in ["GB", "USB"]:
+            return 0
+        if not isinstance(index, int):
+            return 0
+        else:
+            return 1
+
+    def ConnectRM1(connection, index):
+        if connection not in ["GB", "USB"]:
+            return 0
+        if not isinstance(index, int):
+            return 0
+        else:
+            return 1
+
+    def ConnectRX6(connection, index):
+        if connection not in ["GB", "USB"]:
+            return 0
+        if not isinstance(index, int):
+            return 0
+        else:
+            return 1
+
+    def ClearCOF():
+        return 1
+
+    def LoadCOF(circuit):
+        if not os.path.isfile(circuit):
+            return 0
+        else:
+            return 1
+
+    def Run():
+        return 1
+
+    def ConnectZBUS(connection):
+        if connection not in ["GB", "USB"]:
+            return 0
+        else:
+            return 1
+
+    def Halt():
+        return 1
+
+    def SetTagVal(tag, value):
+        if not isinstance(tag, str):
+            return 0
+        if not isinstance(value, (int, float)):
+            return 0
+        else:
+            return 1
+
+    def ReadTagV(tag, nstart, n_samples):
+        if not isinstance(tag, str):
+            return 0
+        if not isinstance(nstart, int):
+            return 0
+        if not isinstance(nstart, int):
+            return 0
+        if n_samples == 1:
+            return 1
+        if n_samples > 1:
+            return [random.random() for i in range(n_samples)]

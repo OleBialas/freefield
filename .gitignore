@@ -1,5 +1,6 @@
 freefield_toolbox/__pycache__/
 freefield/__pycache__/
+*/__pycache/*
 /.idea
 /log/
 freefield/level_calibration_dome.npy

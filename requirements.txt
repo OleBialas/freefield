@@ -1,3 +1,4 @@
 slab
 opencv-python
-dlib
+tensorflow
+numpy

@@ -24,7 +24,7 @@ model_points = np.array([
 
 
 class PoseEstimator:
-    def __init__(self):
+    def __init__(self, threshold=.9):
         try:
             self.face_net = cv2.dnn.readNetFromCaffe(
                 str(DATADIR/"models"/"prototxt"),
@@ -35,52 +35,57 @@ class PoseEstimator:
             self.model = keras.models.load_model(DATADIR/"models"/"pose_model")
         except OSError:
             logging.warning("could not find the trained headpose model...")
-
+        self.threshold = threshold
         self.detection_result = None
         self.cnn_input_size = 128
         self.marks = None
 
     def pose_from_image(self, image):
-        size = img.shape
+        size = image.shape
         focal_length = size[1]
         center = (size[1]/2, size[0]/2)
         camera_matrix = np.array([[focal_length, 0, center[0]],
                                  [0, focal_length, center[1]],
                                  [0, 0, 1]], dtype="double")
 
-        faceboxes = self.extract_cnn_facebox(img)
+        faceboxes = self.extract_cnn_facebox(image)
         if len(faceboxes) > 1:
             logging.warning("There is more than one face in the image!")
-        facebox = faceboxes[0]
-        face_img = img[facebox[1]: facebox[3], facebox[0]: facebox[2]]
-        face_img = cv2.resize(face_img, (128, 128))
-        face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
-        marks = self.detect_marks([face_img])
-        marks *= (facebox[2] - facebox[0])
-        marks[:, 0] += facebox[0]
-        marks[:, 1] += facebox[1]
-        shape = marks.astype(np.uint)
-        image_points = np.array([
-                                shape[30],     # Nose tip
-                                shape[8],     # Chin
-                                shape[36],     # Left eye left corner
-                                shape[45],     # Right eye right corne
-                                shape[48],     # Left Mouth corner
-                                shape[54]      # Right mouth corner
-                                ], dtype="double")
-        dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
-        (success, rotation_vec, translation_vec) = \
-            cv2.solvePnP(model_points, image_points, camera_matrix,
-                         dist_coeffs)
+            return None, None
+        elif len(faceboxes) == 0:
+            logging.warning("No face detected!")
+            return None, None
+        else:
+            facebox = faceboxes[0]
+            face_img = image[facebox[1]: facebox[3], facebox[0]: facebox[2]]
+            face_img = cv2.resize(face_img, (128, 128))
+            face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
+            marks = self.detect_marks([face_img])
+            marks *= (facebox[2] - facebox[0])
+            marks[:, 0] += facebox[0]
+            marks[:, 1] += facebox[1]
+            shape = marks.astype(np.uint)
+            image_points = np.array([
+                                    shape[30],     # Nose tip
+                                    shape[8],     # Chin
+                                    shape[36],     # Left eye left corner
+                                    shape[45],     # Right eye right corne
+                                    shape[48],     # Left Mouth corner
+                                    shape[54]      # Right mouth corner
+                                    ], dtype="double")
+            dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
+            (success, rotation_vec, translation_vec) = \
+                cv2.solvePnP(model_points, image_points, camera_matrix,
+                             dist_coeffs)
 
-        rotation_mat, _ = cv2.Rodrigues(rotation_vec)
-        pose_mat = cv2.hconcat((rotation_mat, translation_vec))
-        _, _, _, _, _, _, angles = cv2.decomposeProjectionMatrix(pose_mat)
-        angles[0, 0] = angles[0, 0] * -1
+            rotation_mat, _ = cv2.Rodrigues(rotation_vec)
+            pose_mat = cv2.hconcat((rotation_mat, translation_vec))
+            _, _, _, _, _, _, angles = cv2.decomposeProjectionMatrix(pose_mat)
+            angles[0, 0] = angles[0, 0] * -1
 
-        return angles[1, 0], angles[0, 0]  # azimuth, elevation
+            return angles[1, 0], angles[0, 0]  # azimuth, elevation
 
-    def get_faceboxes(self, image, threshold=0.5):
+    def get_faceboxes(self, image):
         """
         Get the bounding box of faces in image using dnn.
         """
@@ -91,7 +96,7 @@ class PoseEstimator:
         detections = self.face_net.forward()
         for result in detections[0, 0, :, :]:
             confidence = result[2]
-            if confidence > threshold:
+            if confidence > self.threshold:
                 x_left_bottom = int(result[3] * cols)
                 y_left_bottom = int(result[4] * rows)
                 x_right_top = int(result[5] * cols)
@@ -174,9 +179,7 @@ class PoseEstimator:
 
     def extract_cnn_facebox(self, image):
         """Extract face area from image."""
-        _, raw_boxes = self.get_faceboxes(
-            image=image, threshold=0.9)
-
+        _, raw_boxes = self.get_faceboxes(image=image)
         a = []
         for box in raw_boxes:
             # Move box down.

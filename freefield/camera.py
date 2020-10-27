@@ -6,11 +6,8 @@ except ModuleNotFoundError:
           "You can download the .whl here: \n"
           "https://www.flir.com/products/spinnaker-sdk/")
 import cv2
-import dlib
-from imutils import face_utils
 from pathlib import Path
 from freefield import setup
-import PIL
 from slab.psychoacoustics import Trialsequence
 import time
 import matplotlib

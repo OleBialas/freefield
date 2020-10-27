@@ -1,0 +1,3 @@
+slab
+opencv-python
+dlib

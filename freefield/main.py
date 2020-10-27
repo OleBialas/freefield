@@ -15,11 +15,11 @@ logging.basicConfig(level=logging.WARNING)
 # default samplerate for generating sounds, filters etc.
 slab.Signal.set_default_samplerate(48828)
 
-_speaker_config = None  # either "dome" or "arc"
+_config = None  # either "dome" or "arc"
 _devices = None
 _calibration_freqs = None  # filters for frequency equalization
 _calibration_lvls = None  # calibration to equalize levels
-_speaker_table = None  # numbers and coordinates of all loudspeakers
+_table = None  # numbers and coordinates of all loudspeakers
 _rec_tresh = 65  # treshold in dB above which recordings are not rejected
 _fix_ele = 0  # fixation points' elevation
 _fix_azi = 0  # fixation points' azimuth
@@ -32,7 +32,7 @@ def initialize_setup(setup, default_mode=None, device_list=None,
     Initialize the devices and load table and calibration for setup.
 
     We are using two different 48-channel setups. A 3-dimensional 'dome' and
-    a horizontal 'arc'. For each setup there are a table describing the position
+    a horizontal 'arc'. For each setup there is a table describing the position
     and channel of each loudspeaker as well as calibration files. This function
     loads those files and stores them in global variables. This is necessary
     for most of the other functions to work.
@@ -42,7 +42,7 @@ def initialize_setup(setup, default_mode=None, device_list=None,
     """
 
     # TODO: put level and frequency equalization in one common file
-    global _speaker_config, _calibration_freqs, _calibration_lvls, _speaker_table, _devices
+    global _config, _calibration_freqs, _calibration_lvls, _table, _devices
     # initialize devices
     _devices = Devices()
     if bool(device_list) == bool(default_mode):
@@ -53,12 +53,12 @@ def initialize_setup(setup, default_mode=None, device_list=None,
         _devices.initialize_default(default_mode)
     # get the correct speaker table and calibration files for the setup
     if setup == 'arc':
-        _speaker_config = 'arc'
+        _config = 'arc'
         freq_calibration_file = DATADIR/Path('frequency_calibration_arc.npy')
         lvl_calibration_file = DATADIR/Path('level_calibration_arc.npy')
         table_file = DATADIR/Path('speakertable_arc.txt')
     elif setup == 'dome':
-        _speaker_config = 'dome'
+        _config = 'dome'
         freq_calibration_file = DATADIR/Path('frequency_calibration_dome.npy')
         lvl_calibration_file = DATADIR/Path('level_calibration_dome.npy')
         table_file = DATADIR/Path('speakertable_dome.txt')
@@ -66,11 +66,11 @@ def initialize_setup(setup, default_mode=None, device_list=None,
         raise ValueError("Unknown device! Use 'arc' or 'dome'.")
     logging.info(f'Speaker configuration set to {setup}.')
     # lambdas provide default values of 0 if azi or ele are not in the file
-    _speaker_table = np.loadtxt(fname=table_file, delimiter=',', skiprows=1,
+    _table = np.loadtxt(fname=table_file, delimiter=',', skiprows=1,
                                 converters={3: lambda s: float(s or 0),
                                             4: lambda s: float(s or 0)})
-    idx = np.where(_speaker_table == -999.)
-    _speaker_table[idx[0], idx[1]] = None  # translate -999 to None
+    idx = np.where(_table == -999.)
+    _table[idx[0], idx[1]] = None  # translate -999 to None
     logging.info('Speaker table loaded.')
     if freq_calibration_file.exists():
         _calibration_freqs = slab.Filter.load(freq_calibration_file)
@@ -127,12 +127,12 @@ def get_speaker(index=None, coordinates=None):
     if bool(index) == bool(coordinates):
         raise ValueError("You have to specify a the index OR coordinates of the speaker!")
     if index:
-        row = int(np.argwhere(_speaker_table[:, 0] == index))
+        row = int(np.argwhere(_table[:, 0] == index))
     elif coordinates:
         if len(coordinates) != 2:
             raise ValueError("Coordinates must have two elements: azimuth and elevation!")
         row = int(np.argwhere(np.logical_and(
-            _speaker_table[:, 3] == coordinates[0], _speaker_table[:, 4] == coordinates[1])))
+            _table[:, 3] == coordinates[0], _table[:, 4] == coordinates[1])))
     return _convert_tablerow(row)
 
 
@@ -140,13 +140,13 @@ def _convert_tablerow(row):
     """
     Convert the data from table to the correct format for each variable
     """
-    speaker = int(_speaker_table[row, 0])
-    channel = int(_speaker_table[row, 1])
-    azimuth = _speaker_table[row, 3]
-    elevation = _speaker_table[row, 4]
-    chidx = int(_speaker_table[row, 2])
-    bitval = _speaker_table[row, 5]
-    bitidx = _speaker_table[row, 6]
+    speaker = int(_table[row, 0])
+    channel = int(_table[row, 1])
+    azimuth = _table[row, 3]
+    elevation = _table[row, 4]
+    chidx = int(_table[row, 2])
+    bitval = _table[row, 5]
+    bitidx = _table[row, 6]
     if bitval != bitval:
         bitval, bitidx = 0, 0
     else:
@@ -165,7 +165,7 @@ def get_speakerlist(speakers: list) -> list:
         speakers (list or list of lists): indices or coordinates of speakers.
 
     Returns:
-        list of lists: rows from _speaker_table corresponding to the list.
+        list of lists: rows from _table corresponding to the list.
             each sub list contains all the variable returned by get_speaker()
     """
     if (all(isinstance(x, int) for x in speakers) or  # list contains indices
@@ -181,7 +181,7 @@ def all_leds():
     '''
     Temporary hack: return all speakers from the table which have a LED attached
     '''
-    idx = np.where(_speaker_table[:, 5] == _speaker_table[:, 5])[0]
+    idx = np.where(_table[:, 5] == _table[:, 5])[0]
     return get_speakerlist(idx)
 
 
@@ -198,9 +198,9 @@ def shift_setup(delta=(0, 0)):
         shifted. Positive values mean shifting right/up, negative values
         mean shiftig left/down
     """
-    global _speaker_table
-    _speaker_table[:, 3] += delta[0]  # azimuth
-    _speaker_table[:, 4] += delta[1]  # elevation
+    global _table
+    _table[:, 3] += delta[0]  # azimuth
+    _table[:, 4] += delta[1]  # elevation
     logging.info("shifting the loudspeaker array by % s degree in azimuth / n"
                  "and % s degree in elevation" % (delta[0], delta[1]))
 
@@ -445,7 +445,7 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
     sig = slab.Sound.chirp(duration=0.05, from_freq=low_cutoff, to_freq=high_cutoff)
     sig.level = 95
     if speakers == "all":  # use the whole speaker table
-        speaker_list = _speaker_table
+        speaker_list = _table
     else:  # use a subset of speakers
         speaker_list = speakers_from_list(speakers)
     _calibration_lvls = _level_equalization(sig, speaker_list, target_speaker)
@@ -530,7 +530,7 @@ def test_equalization(sig, speakers="all", max_diff=5):
     # recordings without, with level and with complete (level+frequency) equalization
     rec_raw, rec_lvl_eq, rec_freq_eq = [], [], []
     if speakers == "all":  # use the whole speaker table
-        speaker_list = _speaker_table
+        speaker_list = _table
     else:  # use a subset of speakers
         speaker_list = speakers_from_list(speakers)
     for row in speaker_list:

@@ -1,4 +1,5 @@
 freefield_toolbox/__pycache__/
+freefield_toolbox/.pytest_cache/
 freefield/__pycache__/
 test/__pycache/
 /.idea

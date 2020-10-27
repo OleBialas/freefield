@@ -9,10 +9,8 @@ import cv2
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-import math
 from freefield import DATADIR
 import logging
-from matplotlib import pyplot as plt
 
 # 3D-model points to which the points extracted from an image are matched:
 model_points = np.array([
@@ -41,6 +39,46 @@ class PoseEstimator:
         self.detection_result = None
         self.cnn_input_size = 128
         self.marks = None
+
+    def pose_from_image(self, image):
+        size = img.shape
+        focal_length = size[1]
+        center = (size[1]/2, size[0]/2)
+        camera_matrix = np.array([[focal_length, 0, center[0]],
+                                 [0, focal_length, center[1]],
+                                 [0, 0, 1]], dtype="double")
+
+        faceboxes = self.extract_cnn_facebox(img)
+        if len(faceboxes) > 1:
+            logging.warning("There is more than one face in the image!")
+        facebox = faceboxes[0]
+        face_img = img[facebox[1]: facebox[3], facebox[0]: facebox[2]]
+        face_img = cv2.resize(face_img, (128, 128))
+        face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
+        marks = self.detect_marks([face_img])
+        marks *= (facebox[2] - facebox[0])
+        marks[:, 0] += facebox[0]
+        marks[:, 1] += facebox[1]
+        shape = marks.astype(np.uint)
+        image_points = np.array([
+                                shape[30],     # Nose tip
+                                shape[8],     # Chin
+                                shape[36],     # Left eye left corner
+                                shape[45],     # Right eye right corne
+                                shape[48],     # Left Mouth corner
+                                shape[54]      # Right mouth corner
+                                ], dtype="double")
+        dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
+        (success, rotation_vec, translation_vec) = \
+            cv2.solvePnP(model_points, image_points, camera_matrix,
+                         dist_coeffs)
+
+        rotation_mat, _ = cv2.Rodrigues(rotation_vec)
+        pose_mat = cv2.hconcat((rotation_mat, translation_vec))
+        _, _, _, _, _, _, angles = cv2.decomposeProjectionMatrix(pose_mat)
+        angles[0, 0] = angles[0, 0] * -1
+
+        return angles[1, 0], angles[0, 0]  # azimuth, elevation
 
     def get_faceboxes(self, image, threshold=0.5):
         """
@@ -136,7 +174,7 @@ class PoseEstimator:
 
     def extract_cnn_facebox(self, image):
         """Extract face area from image."""
-        _, raw_boxes = self.face_detector.get_faceboxes(
+        _, raw_boxes = self.get_faceboxes(
             image=image, threshold=0.9)
 
         a = []
@@ -160,11 +198,9 @@ class PoseEstimator:
         # # Actual detection.
         predictions = self.model.signatures["predict"](
             tf.constant(image_np, dtype=tf.uint8))
-
         # Convert predictions to landmarks.
         marks = np.array(predictions['output']).flatten()[:136]
         marks = np.reshape(marks, (-1, 2))
-
         return marks
 
     @staticmethod
@@ -206,84 +242,3 @@ def draw_annotation_box(img, rotation_vector, translation_vector,
     point_2d = np.int32(point_2d.reshape(-1, 2))
     k = (point_2d[5] + point_2d[8])//2
     return(point_2d[2], k)
-
-
-# single image pose estimation:
-mark_detector = MarkDetector()
-cap = cv2.VideoCapture(0)
-cap.isOpened()
-cap.grab()
-img = cap.retrieve()[1]
-plt.imshow(img, cmap="gray")
-cap.release()
-
-size = img.shape
-focal_length = size[1]
-center = (size[1]/2, size[0]/2)
-camera_matrix = np.array([[focal_length, 0, center[0]],
-                         [0, focal_length, center[1]],
-                         [0, 0, 1]], dtype="double")
-
-faceboxes = mark_detector.extract_cnn_facebox(img)
-
-for facebox in faceboxes:
-    face_img = img[facebox[1]: facebox[3], facebox[0]: facebox[2]]
-    face_img = cv2.resize(face_img, (128, 128))
-    face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
-    marks = mark_detector.detect_marks([face_img])
-    marks *= (facebox[2] - facebox[0])
-    marks[:, 0] += facebox[0]
-    marks[:, 1] += facebox[1]
-    shape = marks.astype(np.uint)
-    # mark_detector.draw_marks(img, marks, color=(0, 255, 0))
-    image_points = np.array([
-                            shape[30],     # Nose tip
-                            shape[8],     # Chin
-                            shape[36],     # Left eye left corner
-                            shape[45],     # Right eye right corne
-                            shape[48],     # Left Mouth corner
-                            shape[54]      # Right mouth corner
-                            ], dtype="double")
-    dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
-    (success, rotation_vec, translation_vec) = \
-        cv2.solvePnP(model_points, image_points, camera_matrix,
-                     dist_coeffs, flags=cv2.SOLVEPNP_UPNP)
-
-
-# this is the "old" way of getting the pose:
-rotation_mat, _ = cv2.Rodrigues(rotation_vec)
-pose_mat = cv2.hconcat((rotation_mat, translation_vec))
-_, _, _, _, _, _, angles = cv2.decomposeProjectionMatrix(pose_mat)
-angles[0, 0] = angles[0, 0]*-1
-
-# new way:
-(nose_end_point2D, jacobian) = \
-    cv2.projectPoints(np.array([(0.0, 0.0, 1000.0)]), rotation_vec,
-                      translation_vec, camera_matrix, dist_coeffs)
-
-p1 = (int(image_points[0][0]), int(image_points[0][1]))
-p2 = (int(nose_end_point2D[0][0][0]), int(nose_end_point2D[0][0][1]))
-x1, x2 = draw_annotation_box(img, rotation_vec, translation_vec, camera_matrix)
-m = (p2[1] - p1[1])/(p2[0] - p1[0])
-ang1 = math.degrees(math.atan(m))
-m = (x2[1] - x1[1])/(x2[0] - x1[0])
-ang2 = math.degrees(math.atan(-1/m))
-
-# continuous tracking:
-mark_detector = MarkDetector()
-cap = cv2.VideoCapture(0)
-ret, img = cap.read()
-size = img.shape
-font = cv2.FONT_HERSHEY_SIMPLEX
-# 3D model points.
-
-
-# Camera internals
-focal_length = size[1]
-center = (size[1]/2, size[0]/2)
-camera_matrix = np.array([[focal_length, 0, center[0]],
-                         [0, focal_length, center[1]],
-                         [0, 0, 1]], dtype="double")
-
-cv2.destroyAllWindows()
-cap.release()

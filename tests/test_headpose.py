@@ -23,7 +23,3 @@ def test_headpose():
             else:
                 assert azi == row["azimuth"].values[0]
                 assert ele == row["elevation"].values[0]
-
-
-type(row["azimuth"].values[0])
-np.float64(row["azimuth"])

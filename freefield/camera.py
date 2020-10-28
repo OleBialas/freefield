@@ -5,108 +5,60 @@ except ModuleNotFoundError:
     print("PySpin module required for working with FLIR cams not found! \n"
           "You can download the .whl here: \n"
           "https://www.flir.com/products/spinnaker-sdk/")
-import cv2
 from pathlib import Path
 from freefield import setup
 from slab.psychoacoustics import Trialsequence
 import time
+import cv2
 import matplotlib
 from scipy import stats
 from matplotlib import pyplot as plt
 import pandas as pd
+import logging
 import numpy as np
-import urllib.request
-
-# define internal variables
-_location = Path(__file__).resolve().parents[0]
-_detector = None
-_res = 1  # resolution of images, 1 = 100%
-_nim = 1  # number of images to acquire for headpose
-_predictor = None
-_imagesize = None
-_cam_type = None
-_cams = None
-_system = None
-_cal = None
-_object_pts = numpy.float32([[6.825897, 6.760612, 4.402142],
-                             [1.330353, 7.122144, 6.903745],
-                             [-1.330353, 7.122144, 6.903745],
-                             [-6.825897, 6.760612, 4.402142],
-                             [5.311432, 5.485328, 3.987654],
-                             [1.789930, 5.393625, 4.413414],
-                             [-1.789930, 5.393625, 4.413414],
-                             [-5.311432, 5.485328, 3.987654],
-                             [2.005628, 1.409845, 6.165652],
-                             [-2.005628, 1.409845, 6.165652],
-                             [2.774015, -2.080775, 5.048531],
-                             [-2.774015, -2.080775, 5.048531],
-                             [0.000000, -3.116408, 6.097667],
-                             [0.000000, -7.415691, 4.070434]])
-
-_reprojectsrc = numpy.float32([[10.0, 10.0, 10.0],
-                               [10.0, 10.0, -10.0],
-                               [10.0, -10.0, -10.0],
-                               [10.0, -10.0, 10.0],
-                               [-10.0, 10.0, 10.0],
-                               [-10.0, 10.0, -10.0],
-                               [-10.0, -10.0, -10.0],
-                               [-10.0, -10.0, 10.0]])
-# initialize dlib face detection and landmark fitting:
-_detector = dlib.get_frontal_face_detector()
-try:
-    _predictor = dlib.shape_predictor(
-        str(_location/Path("shape_predictor_68_face_landmarks.dat")))
-except RuntimeError:
-    print("could not find the file containing the face landmarks!\n"
-          "i will download it for you, this may take a moment...")
-    filedata = urllib.request.urlopen("https://media.githubusercontent.com/media/OleBialas/"
-                                      "freefield_toolbox""/master/freefield/"
-                                      "shape_predictor_68_face_landmarks.dat")
-    datatowrite = filedata.read()
-    with open(_location/Path("shape_predictor_68_face_landmarks.dat"), "wb") as file:
-        file.write(datatowrite)
-    print("done")
 
 
-def init(multiprocess=False, type="freefield"):
-    global _cams, _system, _cam_type, _imagesize
+class Cameras:
+    def __init__(self, kind="flir"):
+        if kind.lower() == "flir":
+            self.cams = initialize_flir()
+        self.ncams = 0
+        self.cams = None
 
-    _cam_type = type.lower()
-    if _cam_type == "freefield":  # Use FLIR cameras
-        _system = PySpin.System.GetInstance()  # get reference to system object
-        _cams = _system.GetCameras()   # get list of _cameras from the system
-        num_cameras = _cams.GetSize()
-        if num_cameras == 0:    # Finish if there are no cameras
-            _cams.Clear()  # Clear camera list before releasing system
-            _system.ReleaseInstance()  # Release system instance
-            raise ValueError('No camera found!')
-        else:
-            for cam in _cams:
-                cam.Init()  # Initialize camera
-            setup.printv("initialized %s FLIR camera(s)" % (len(_cams)))
-    elif _cam_type == "web":
-        _cams = []
-        stop = False
-        i = 0
-        while stop is False:
-            cap = cv2.VideoCapture(i)
-            if cap.isOpened():
-                _cams.append(cap)
-            else:
-                stop = True
-        setup.printv("initialized %s webcams(s)" % (len(_cams)))
+    def acquire_images(self, n=1):
+    image_data = np.zeros((_imagesize)+(n_images, len(cams)), dtype="uint8")
+
+
+def initialize_flir():
+    global _system
+    _system = PySpin.System.GetInstance()
+    cams = _system.GetCameras()
+    ncams = cams.GetSize()
+    if ncams == 0:    # Finish if there are no cameras
+        cams.Clear()  # Clear camera list before releasing system
+        _system.ReleaseInstance()  # Release system instance
+        logging.warning('No camera found!')
     else:
-        raise ValueError("type must be either 'freefield' or 'web'")
-    # get a single image to get the size and estimate camera coefficients
-    _imagesize = acquire_image(cams=0, n_images=1).shape[0:2]
+        for cam in cams:
+            cam.Init()  # Initialize camera
+        logging.info(f"initialized {len(cams)} FLIR camera(s)")
+    return cams
 
 
-def set(n_images=None, resolution=None):
-    global _nim, _res
-    if n_images:
-        _nim = n_images
-    if resolution:
-        _res = resolution
+def initialize_webcam():
+    cams, stop, i = [], False, 0
+    while stop is False:
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            cams.append(cap)
+        else:
+            stop = True
+    logging.info("initialized %s webcams(s)" % (len(_cams)))
+    return cams
+
+# get a single image to get the size and estimate camera coefficients
+_imagesize = acquire_image(cams=0, n_images=1).shape[0:2]
+
 
 
 def acquire_image(cams="all", n_images=1):

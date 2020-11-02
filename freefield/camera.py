@@ -17,59 +17,6 @@ import logging
 import numpy as np
 
 
-def initialize(kind):
-    global cams, model
-    if kind.lower() == "flir":
-        cams = FlirCams()
-    elif kind.lowe() == "webcam":
-        cams = WebCams()
-    model = PoseEstimator()
-
-
-def get_headpose(convert=True, average=True, n=1, resolution=1.0):
-    """
-    Acquire n images and compute headpose (elevation and azimuth). If
-    convert is True use the regression coefficients to convert
-    the camera into world coordinates
-    """
-    pose = pd.DataFrame(columns=["ele", "azi", "cam"])
-    images = cams.acquire_image(cams, n)  # take images
-    for i_cam in range(images.shape[3]):
-        for i_image in range(images.shape[2]):
-            # change resolution of the image
-            image = PIL.Image.fromarray(images[:, :, i_image, i_cam])
-            width = height = int(cams.imsize[1]*resolution)
-            image = image.resize((width, height), PIL.Image.ANTIALIAS)
-            ele, azi, _ = model.pose_from_image(numpy.asarray(image))
-
-            row = pd.DataFrame([[ele, azi, i_cam]],
-                               columns=["ele", "azi", "cam"])
-            pose = pose.append(row)
-    if convert:  # convert azimuth and elevation to world coordinates
-        if len(pose.dropna()) > 0:
-            if _cal is None:
-                raise ValueError("Can't convert coordinates because camera is"
-                                 "not calibrated!")
-            else:
-                for cam in np.unique(pose["cam"]):
-                    for angle, expected in zip(["azi", "ele"], target):
-                        reg = _cal[(_cal["cam"] == cam) & (_cal["angle"] == angle)]
-                        if expected is not None:  # only use cam if traget is in range
-                            if not reg["min"].values[0] <= expected <= reg["max"].values[0]:
-                                pose.loc[pose["cam"] == cam, angle] = np.nan
-                        pose.loc[pose["cam"] == cam, angle] = (pose[pose["cam"] == cam][angle] -
-                                                               reg["a"].values)/reg["b"].values
-            pose.insert(3, "frame", "world")
-        else:
-            pose.insert(3, "frame", "camera")
-    if average:  # only return the mean
-        if not convert:
-            raise ValueError("Can only average after converting coordinates!")
-        return pose.ele.mean(), pose.azi.mean()
-    else:  # return the whole data frame
-        return pose
-
-
 class FlirCams:
     def __init__(self):
         self.system = PySpin.System.GetInstance()
@@ -163,18 +110,56 @@ class WebCams:
         return image_data
 
 
-class VirtualCam:
-    def __init__(self):
-        self.ncams = 1
-        self.imsize = self.acquire_images(n=1).shape[0:2]
+class Cameras(FlirCams, WebCams):
+    def __init__(self, kind):
+        if kind.lower() == "flir":
+            FlirCams.__init__()
+        elif kind.lowe() == "webcam":
+            WebCams.__init__()
+        self.model = PoseEstimator()
+        self.calibration = None
 
-    def acquire_images(self, n=1):
-        if hasattr(self, "imagesize"):
-            image_data = np.zeros((self.imsize)+(n, self.ncams), dtype="uint8")
-        else:
-            image_data = None
-
-
+    def get_headpose(self, convert=True, average=True, n=1, resolution=1.0):
+        """
+        Acquire n images and compute headpose (elevation and azimuth). If
+        convert is True use the regression coefficients to convert
+        the camera into world coordinates
+        """
+        pose = pd.DataFrame(columns=["ele", "azi", "cam"])
+        images = self.acquire_image(cams, n)  # take images
+        for i_cam in range(images.shape[3]):
+            for i_image in range(images.shape[2]):
+                # change resolution of the image
+                image = PIL.Image.fromarray(images[:, :, i_image, i_cam])
+                width = height = int(cams.imsize[1]*resolution)
+                image = image.resize((width, height), PIL.Image.ANTIALIAS)
+                ele, azi, _ = model.pose_from_image(numpy.asarray(image))
+                row = pd.DataFrame([[ele, azi, i_cam]],
+                                   columns=["ele", "azi", "cam"])
+                pose = pose.append(row)
+        if convert:  # convert azimuth and elevation to world coordinates
+            if len(pose.dropna()) > 0:
+                if _cal is None:
+                    raise ValueError("Can't convert coordinates because camera is"
+                                     "not calibrated!")
+                else:
+                    for cam in np.unique(pose["cam"]):
+                        for angle, expected in zip(["azi", "ele"], target):
+                            reg = _cal[(_cal["cam"] == cam) & (_cal["angle"] == angle)]
+                            if expected is not None:  # only use cam if traget is in range
+                                if not reg["min"].values[0] <= expected <= reg["max"].values[0]:
+                                    pose.loc[pose["cam"] == cam, angle] = np.nan
+                            pose.loc[pose["cam"] == cam, angle] = (pose[pose["cam"] == cam][angle] -
+                                                                   reg["a"].values)/reg["b"].values
+                pose.insert(3, "frame", "world")
+            else:
+                pose.insert(3, "frame", "camera")
+        if average:  # only return the mean
+            if not convert:
+                raise ValueError("Can only average after converting coordinates!")
+            return pose.ele.mean(), pose.azi.mean()
+        else:  # return the whole data frame
+            return pose
 
 
 def calibrate_camera(targets=None, n_reps=1, cams="all"):

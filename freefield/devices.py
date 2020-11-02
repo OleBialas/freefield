@@ -86,24 +86,24 @@ class Devices(object):
         """
         if mode.lower() == 'play_rec':
             device_list = [('RP2', 'RP2',  DIR/'data'/'rcx'/'rec_buf.rcx'),
-                           ('RX81', 'RX8', DATADIR/'rcx'/'play_buf.rcx'),
-                           ('RX82', 'RX8', DATADIR/'rcx'/'play_buf.rcx')]
+                           ('RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'),
+                           ('RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx')]
         elif mode.lower() == "play_birec":
-            device_list = [('RP2', 'RP2',  DATADIR/'rcx'/'bi_rec_buf.rcx'),
-                           ('RX81', 'RX8', DATADIR/'rcx'/'play_buf.rcx'),
-                           ('RX82', 'RX8', DATADIR/'rcx'/'play_buf.rcx')]
+            device_list = [('RP2', 'RP2',  DIR/'data'/'rcx'/'bi_rec_buf.rcx'),
+                           ('RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'),
+                           ('RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx')]
         elif mode.lower() == "loctest_freefield":
-            device_list = [('RP2', 'RP2',  DATADIR/'rcx'/'button.rcx'),
-                           ('RX81', 'RX8', DATADIR/'rcx'/'play_buf.rcx'),
-                           ('RX82', 'RX8', DATADIR/'rcx'/'play_buf.rcx')]
+            device_list = [('RP2', 'RP2',  DIR/'data'/'rcx'/'button.rcx'),
+                           ('RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'),
+                           ('RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx')]
         elif mode.lower() == "loctest_headphones":
-            device_list = [('RP2', 'RP2',  DATADIR/'rcx'/'bi_play_buf.rcx'),
-                           ('RX81', 'RX8', DATADIR/'rcx'/'bits.rcx'),
-                           ('RX82', 'RX8', DATADIR/'rcx'/'bits.rcx')]
+            device_list = [('RP2', 'RP2',  DIR/'data'/'rcx'/'bi_play_buf.rcx'),
+                           ('RX81', 'RX8', DIR/'data'/'rcx'/'bits.rcx'),
+                           ('RX82', 'RX8', DIR/'data'/'rcx'/'bits.rcx')]
         elif mode.lower() == "cam_calibration":
-            device_list = [('RP2', 'RP2',  DATADIR/'rcx'/'button.rcx'),
-                           ('RX81', 'RX8', DATADIR/'rcx'/'bits.rcx'),
-                           ('RX82', 'RX8', DATADIR/'rcx'/'bits.rcx')]
+            device_list = [('RP2', 'RP2',  DIR/'data'/'rcx'/'button.rcx'),
+                           ('RX81', 'RX8', DIR/'data'/'rcx'/'bits.rcx'),
+                           ('RX82', 'RX8', DIR/'data'/'rcx'/'bits.rcx')]
         else:
             raise ValueError(f'mode {mode} is not a valid input!')
         self._mode = mode

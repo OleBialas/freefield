@@ -124,7 +124,7 @@ class WebCams(Cameras):
 def initialize_cameras(kind="flir"):
     if kind.lower() == "flir":
         return FlirCams()
-    elif kind.lowe() == "webcam":
+    elif kind.lower() == "webcam":
         return WebCams()
 
 

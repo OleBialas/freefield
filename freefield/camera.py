@@ -113,9 +113,9 @@ class WebCams:
 class Cameras(FlirCams, WebCams):
     def __init__(self, kind):
         if kind.lower() == "flir":
-            FlirCams.__init__()
+            FlirCams.__init__(self)
         elif kind.lower() == "webcam":
-            WebCams.__init__()
+            WebCams.__init__(self)
         self.model = PoseEstimator()
         self.calibration = None
 

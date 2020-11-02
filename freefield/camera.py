@@ -82,7 +82,7 @@ class WebCams:
                 self.cams.append(cap)
             else:
                 stop = True
-        logging.info("initialized %s webcams(s)" % (len(_cams)))
+        logging.info("initialized %s webcams(s)" % (len(self.cams)))
         self.ncams = len(self.cams)
         self.imsize = self.acquire_images(n=1).shape[0:2]
 

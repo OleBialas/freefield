@@ -23,6 +23,7 @@ setup(name='freefield',
       python_requires='>=3.6',
       install_requires=['numpy', 'matplotlib', 'slab'],
       packages=find_packages(),
-      package_data={'freefield': ['data/*.txt', 'data/*.wav', 'data/rcx/*']},
+      package_data={'freefield': ['data/tables/*', 'data/sounds/*',
+                                  'data/rcx/*']},
       include_package_data=True,
       zip_safe=False)

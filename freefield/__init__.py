@@ -7,3 +7,4 @@ DIR = pathlib.Path(__file__).parent.resolve()
 
 from freefield.devices import Devices
 from freefield.camera import Cameras
+from freefield.headpose import PoseEstimator

@@ -19,7 +19,7 @@ from abc import abstractmethod
 
 
 class Cameras:
-    def __init__(self, kind):
+    def __init__(self):
         self.model = PoseEstimator()
         self.calibration = None
 

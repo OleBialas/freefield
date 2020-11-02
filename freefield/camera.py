@@ -27,9 +27,13 @@ class Cameras:
     def acquire_images(self) -> None:
         pass
 
+    def test_function(self):
+        print("Hello")
+
 
 class FlirCams(Cameras):
     def __init__(self):
+        super().__init__()
         self.system = PySpin.System.GetInstance()
         self.cams = self._system.GetCameras()
         self.ncams = self.cams.GetSize()
@@ -85,6 +89,7 @@ class FlirCams(Cameras):
 
 class WebCams(Cameras):
     def __init__(self):
+        super().__init__()
         self.cams = []
         stop = False
         while stop is False:

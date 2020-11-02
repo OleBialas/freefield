@@ -30,6 +30,54 @@ class Cameras:
     def test_function(self):
         print("Hello")
 
+    def get_headpose(self, convert=True, average=True, n=1, resolution=1.0):
+        """Acquire n images and compute headpose (elevation and azimuth). If
+        convert is True use the regression coefficients to convert
+        the camera into world coordinates
+        """
+        pose = pd.DataFrame(columns=["ele", "azi", "cam"])
+        images = self.acquire_image(n)  # take images
+        for i_cam in range(images.shape[3]):
+            for i_image in range(images.shape[2]):
+                image = images[:, :, i_image, i_cam]  # get image from array
+                image = self.change_image_res(image, resolution)
+                # get the headpose,
+                ele, azi, _ = self.model.pose_from_image(numpy.asarray(image))
+                pose = pose.append(
+                    pd.DataFrame([[ele, azi, i_cam, "world"]],
+                                 columns=["ele", "azi", "cam", "camera"]))
+        if len(pose.dropna()) > 0:
+            return pose  # if all are NaN, no face was found in any image
+        if convert and (self.calibration is not None):
+            pose = self.convert_coordinates(pose)
+
+        if average:  # only return the mean
+            if not convert:
+                raise ValueError("Can only average after converting coordinates!")
+            return pose.ele.mean(), pose.azi.mean()
+        else:  # return the whole data frame
+            return pose
+        else:
+            raise ValueError("Can't convert coordinates because camera is"
+                             "not calibrated!")
+
+    def change_image_res(self, image, resolution):
+        width = height = int(self.imsize[1]*resolution)
+        image = image.resize((width, height), PIL.Image.ANTIALIAS)
+        image = PIL.Image.fromarray(image)
+        return image
+
+    def convert_coordinates(self, coordinates):
+        for cam in np.unique(coordinates["cam"]):
+            for angle, expected in zip(["azi", "ele"], target):
+                reg = _cal[(_cal["cam"] == cam) & (_cal["angle"] == angle)]
+                        if expected is not None:  # only use cam if traget is in range
+                            if not reg["min"].values[0] <= expected <= reg["max"].values[0]:
+                                pose.loc[pose["cam"] == cam, angle] = np.nan
+                        pose.loc[pose["cam"] == cam, angle] = (pose[pose["cam"] == cam][angle] -
+                                                               reg["a"].values)/reg["b"].values
+            pose.insert(3, "frame", "world")
+
 
 class FlirCams(Cameras):
     def __init__(self):

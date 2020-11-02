@@ -15,9 +15,20 @@ from matplotlib import pyplot as plt
 import pandas as pd
 import logging
 import numpy as np
+from abc import abstractmethod
 
 
-class FlirCams:
+class Cameras:
+    def __init__(self, kind):
+        self.model = PoseEstimator()
+        self.calibration = None
+
+    @abstractmethod
+    def acquire_images(self) -> None:
+        pass
+
+
+class FlirCams(Cameras):
     def __init__(self):
         self.system = PySpin.System.GetInstance()
         self.cams = self._system.GetCameras()
@@ -72,7 +83,7 @@ class FlirCams:
         return image_data
 
 
-class WebCams:
+class WebCams(Cameras):
     def __init__(self):
         self.cams = []
         stop = False
@@ -110,21 +121,18 @@ class WebCams:
         return image_data
 
 
-class Cameras(FlirCams, WebCams):
-    def __init__(self, kind):
-        if kind.lower() == "flir":
-            FlirCams.__init__(self)
-        elif kind.lower() == "webcam":
-            WebCams.__init__(self)
-        self.model = PoseEstimator()
-        self.calibration = None
+def initialize_cameras(kind="flir"):
+    if kind.lower() == "flir":
+        return FlirCams()
+    elif kind.lowe() == "webcam":
+        return WebCams()
 
+
+"""
     def get_headpose(self, convert=True, average=True, n=1, resolution=1.0):
-        """
         Acquire n images and compute headpose (elevation and azimuth). If
         convert is True use the regression coefficients to convert
         the camera into world coordinates
-        """
         pose = pd.DataFrame(columns=["ele", "azi", "cam"])
         images = self.acquire_image(cams, n)  # take images
         for i_cam in range(images.shape[3]):
@@ -163,7 +171,6 @@ class Cameras(FlirCams, WebCams):
 
 
 def calibrate_camera(targets=None, n_reps=1, cams="all"):
-    """
     Calibrate camera(s) by computing the linear regression for a number of
     points in camera and world coordinates.
     If the camera is a webcam you need to give a list of tuples with
@@ -184,10 +191,13 @@ def calibrate_camera(targets=None, n_reps=1, cams="all"):
     n_repeat (int): number of repetitions for each target (default = 1)
 
     return: world_coordinates, camera_coordinates (list of tuples)
-    """
+
     # azimuth and elevation of a set of points in camera and world coordinates
     # one list for each camera
-    coords = pd.DataFrame(columns=["ele_cam", "azi_cam",
+    coords = pd.DataFrame(columns=["ele_cam", "azi_ca
+
+Apparently, this user prefers to keep an air of mystery about them.
+m",
                                    "ele_world", "azi_world", "cam", "frame", "n"])
     if _cam_type == "web" and targets is None:
         raise ValueError("Define target positions for calibrating webcam!")
@@ -231,10 +241,8 @@ def calibrate_camera(targets=None, n_reps=1, cams="all"):
 
 
 def camera_to_world(coords, plot=True):
-    """
     Find linear regression for camera and world coordinates and store
     them in global variables
-    """
     global _cal
     _cal = pd.DataFrame(columns=["a", "b", "cam", "angle", "min", "max"])
     if plot:
@@ -282,3 +290,4 @@ def halt():
         for cam in _cams:
             cam.release()
     setup.printv("Deinitializing _camera...")
+"""

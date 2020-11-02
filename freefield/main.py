@@ -9,7 +9,7 @@ from matplotlib.axes import Axes
 from freefield import camera
 import pandas as pd
 import datetime
-from freefield import DATADIR, Devices
+from freefield import DIR, Devices
 import logging
 logging.basicConfig(level=logging.WARNING)
 # default samplerate for generating sounds, filters etc.
@@ -54,14 +54,14 @@ def initialize_setup(setup, default_mode=None, device_list=None,
     # get the correct speaker table and calibration files for the setup
     if setup == 'arc':
         _config = 'arc'
-        freq_calibration_file = DATADIR/Path('frequency_calibration_arc.npy')
-        lvl_calibration_file = DATADIR/Path('level_calibration_arc.npy')
-        table_file = DATADIR/Path('speakertable_arc.txt')
+        freq_calibration_file = DIR/'data'/Path('frequency_calibration_arc.npy')
+        lvl_calibration_file = DIR/'data'/Path('level_calibration_arc.npy')
+        table_file = DIR/'data'/Path('speakertable_arc.txt')
     elif setup == 'dome':
         _config = 'dome'
-        freq_calibration_file = DATADIR/Path('frequency_calibration_dome.npy')
-        lvl_calibration_file = DATADIR/Path('level_calibration_dome.npy')
-        table_file = DATADIR/Path('speakertable_dome.txt')
+        freq_calibration_file = DIR/'data'/Path('frequency_calibration_dome.npy')
+        lvl_calibration_file = DIR/'data'/Path('level_calibration_dome.npy')
+        table_file = DIR/'data'/Path('speakertable_dome.txt')
     else:
         raise ValueError("Unknown device! Use 'arc' or 'dome'.")
     logging.info(f'Speaker configuration set to {setup}.')

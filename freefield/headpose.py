@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-from freefield import DATADIR
+from freefield import DIR
 import logging
 
 # 3D-model points to which the points extracted from an image are matched:
@@ -27,12 +27,13 @@ class PoseEstimator:
     def __init__(self, threshold=.9):
         try:
             self.face_net = cv2.dnn.readNetFromCaffe(
-                str(DATADIR/"models"/"prototxt"),
-                str(DATADIR/"models"/"caffemodel"))
+                str(DIR/'data'/"models"/"prototxt"),
+                str(DIR/'data'/"models"/"caffemodel"))
         except cv2.error:
             logging.warning("could not initialize DNN!")
         try:  # Restore model from the saved_model file.
-            self.model = keras.models.load_model(DATADIR/"models"/"pose_model")
+            self.model = \
+                keras.models.load_model(DIR/'data'/"models"/"pose_model")
         except OSError:
             logging.warning("could not find the trained headpose model...")
         self.threshold = threshold

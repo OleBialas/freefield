@@ -1,6 +1,6 @@
 from sys import platform
 import numpy as np
-from freefield import DATADIR
+from freefield import DIR
 import os.path
 import random
 import logging
@@ -85,7 +85,7 @@ class Devices(object):
             mode (str): default configuration for initializing devices
         """
         if mode.lower() == 'play_rec':
-            device_list = [('RP2', 'RP2',  DATADIR/'rcx'/'rec_buf.rcx'),
+            device_list = [('RP2', 'RP2',  DIR/'data'/'rcx'/'rec_buf.rcx'),
                            ('RX81', 'RX8', DATADIR/'rcx'/'play_buf.rcx'),
                            ('RX82', 'RX8', DATADIR/'rcx'/'play_buf.rcx')]
         elif mode.lower() == "play_birec":

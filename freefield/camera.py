@@ -5,12 +5,11 @@ except ModuleNotFoundError:
     print("PySpin module required for working with FLIR cams not found! \n"
           "You can download the .whl here: \n"
           "https://www.flir.com/products/spinnaker-sdk/")
-from pathlib import Path
-from freefield import setup
+import PIL
+from freefield import PoseEstimator, DIR
 from slab.psychoacoustics import Trialsequence
 import time
 import cv2
-import matplotlib
 from scipy import stats
 from matplotlib import pyplot as plt
 import pandas as pd
@@ -18,166 +17,31 @@ import logging
 import numpy as np
 
 
-class Cameras:
-    def __init__(self, kind="flir"):
-        if kind.lower() == "flir":
-            self.cams = initialize_flir()
-        self.ncams = 0
-        self.cams = None
-
-    def acquire_images(self, n=1):
-    image_data = np.zeros((_imagesize)+(n_images, len(cams)), dtype="uint8")
+def initialize(kind):
+    global cams, model
+    if kind.lower() == "flir":
+        cams = FlirCams()
+    elif kind.lowe() == "webcam":
+        cams = WebCams()
+    model = PoseEstimator()
 
 
-def initialize_flir():
-    global _system
-    _system = PySpin.System.GetInstance()
-    cams = _system.GetCameras()
-    ncams = cams.GetSize()
-    if ncams == 0:    # Finish if there are no cameras
-        cams.Clear()  # Clear camera list before releasing system
-        _system.ReleaseInstance()  # Release system instance
-        logging.warning('No camera found!')
-    else:
-        for cam in cams:
-            cam.Init()  # Initialize camera
-        logging.info(f"initialized {len(cams)} FLIR camera(s)")
-    return cams
-
-
-def initialize_webcam():
-    cams, stop, i = [], False, 0
-    while stop is False:
-        cap = cv2.VideoCapture(i)
-        if cap.isOpened():
-            cams.append(cap)
-        else:
-            stop = True
-    logging.info("initialized %s webcams(s)" % (len(_cams)))
-    return cams
-
-# get a single image to get the size and estimate camera coefficients
-_imagesize = acquire_image(cams=0, n_images=1).shape[0:2]
-
-
-
-def acquire_image(cams="all", n_images=1):
-    """
-    acquire an image from a camera. The camera at the index given by cam
-    idx in the camera list _cams is used. If only one camera is being used
-    the default cam_idx=0 is sufficient.
-    """
-    if cams == "all":
-        cams = _cams  # use all cameras
-    elif isinstance(cams, int):
-        cams = [_cams[cams]]
-    elif isinstance(cams, list) and all(isinstance(c, int) for c in cams):
-        cams = _cams[cams]
-    else:
-        raise ValueError("cams must be int, list of ints or 'all'!")
-    if _cam_type is None:
-        raise ValueError("Cameras must be initialized before acquisition")
-    if _imagesize is not None:  # ignore when taking image while initializing
-        image_data = np.zeros((_imagesize)+(n_images, len(cams)), dtype="uint8")
-    if _cam_type == "freefield":  # start the cameras
-        for cam in cams:
-            if _cam_type == "freefield":
-                node_acquisition_mode = PySpin.CEnumerationPtr(
-                    cam.GetNodeMap().GetNode('AcquisitionMode'))
-                if (not PySpin.IsAvailable(node_acquisition_mode) or
-                        not PySpin.IsWritable(node_acquisition_mode)):
-                    raise ValueError(
-                        'Unable to set acquisition to continuous, aborting...')
-                node_acquisition_mode_continuous = node_acquisition_mode.GetEntryByName(
-                    'Continuous')
-                if (not PySpin.IsAvailable(node_acquisition_mode_continuous) or
-                        not PySpin.IsReadable(
-                        node_acquisition_mode_continuous)):
-                    raise ValueError(
-                        'Unable to set acquisition to continuous, aborting...')
-                acquisition_mode_continuous = node_acquisition_mode_continuous.GetValue()
-                node_acquisition_mode.SetIntValue(acquisition_mode_continuous)
-                cam.BeginAcquisition()
-    for i_im in range(n_images):
-        for i_cam, cam in enumerate(cams):
-            if _cam_type == "freefield":
-                time.sleep(0.01)
-                image_result = cam.GetNextImage()
-                if image_result.IsIncomplete():
-                    raise ValueError('Image incomplete: image status %d ...'
-                                     % image_result.GetImageStatus())
-                image = image_result.Convert(
-                    PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
-                image = image.GetNDArray()
-                image_result.Release()
-
-            elif _cam_type == "web":
-                # The webcam takes several pictures and reading only advances
-                # the buffer one step at a time, thus grab all images and only
-                # retrieve the latest one
-                for i in range(cv2.CAP_PROP_FRAME_COUNT):
-                    cam.grab()
-                ret, image = cam.retrieve()
-                if ret is False:
-                    setup.printv("could not acquire image, returning None...")
-            if _imagesize is not None:
-                image_data[:, :, i_im, i_cam] = image
-            else:
-                image_data = image
-    if _cam_type == "freefield":
-        [cam.EndAcquisition() for cam in cams]
-    return image_data
-
-
-def set_imagesize(height, width):
-    global _imagesize
-    for cam in _cams:
-        nodemap = cam.GetNodeMap()  # get nodemap
-        # set image width:
-        node_width = PySpin.CIntegerPtr(nodemap.GetNode('Width'))
-        if PySpin.IsAvailable(node_width) and PySpin.IsWritable(node_width):
-            if width > node_width.GetMax():
-                setup.printv("Can not set width to %s because maximum is %s" %
-                             (width, node_width.GetMax()))
-            else:
-                node_width.SetValue(width)
-                imwidth = width
-                setup.printv("set width to %s" % (width))
-        else:
-            print('Width not available...')
-        # set image height:
-        node_height = PySpin.CIntegerPtr(nodemap.GetNode('Height'))
-        if PySpin.IsAvailable(node_height) and PySpin.IsWritable(node_height):
-            if height > node_height.GetMax():
-                setup.printv("Can not set height to %s because maximum is %s" %
-                             (height, node_height.GetMax()))
-            else:
-                node_height.SetValue(height)
-                imheight = height
-                setup.printv("set height to %s" % (height))
-        else:
-            print('Height not available...')
-        _imagesize = (imheight, imwidth)
-
-
-def get_headpose(cams="all", target=(None, None), convert=False, average=False, n_images=None):
+def get_headpose(convert=True, average=True, n=1, resolution=1.0):
     """
     Acquire n images and compute headpose (elevation and azimuth). If
     convert is True use the regression coefficients to convert
     the camera into world coordinates
     """
-    # TODO: sanity check the resulting dataframe, e.g. how big is the max diff
-    # TODO: downscaling images after recording should be replaced with setting camera resolution
     pose = pd.DataFrame(columns=["ele", "azi", "cam"])
-    if n_images is None:  # use default is not specified
-        n_images = _nim
-    images = acquire_image(cams, n_images)  # take images
+    images = cams.acquire_image(cams, n)  # take images
     for i_cam in range(images.shape[3]):
         for i_image in range(images.shape[2]):
+            # change resolution of the image
             image = PIL.Image.fromarray(images[:, :, i_image, i_cam])
-            width, height = int(_imagesize[1]*_res), int(_imagesize[0]*_res)
+            width = height = int(cams.imsize[1]*resolution)
             image = image.resize((width, height), PIL.Image.ANTIALIAS)
-            ele, azi, _ = _pose_from_image(numpy.asarray(image))
+            ele, azi, _ = model.pose_from_image(numpy.asarray(image))
+
             row = pd.DataFrame([[ele, azi, i_cam]],
                                columns=["ele", "azi", "cam"])
             pose = pose.append(row)
@@ -206,71 +70,111 @@ def get_headpose(cams="all", target=(None, None), convert=False, average=False, 
         return pose
 
 
-def _pose_from_image(image, plot_arg=None):
-    """
-    Compute the head pose from an image, which must be a 2d (grayscale) or
-    3d (color) numpy array. If only_euler=True (default), only angles azimuth,
-    elevation and tilt are returned. If False also face shape, rotation vector,
-    translation vector, camera matrix , and distortion are returned. This is
-    nesseccary to plot the image with the computed headpose.
-    """
-    focal_length, center = image.shape[1], (image.shape[1]/2, image.shape[0]/2)
-    mtx = numpy.array(
-        [[focal_length, 0, center[0]],
-         [0, focal_length, center[1]],
-         [0, 0, 1]], dtype="double")
-    dist = numpy.zeros((4, 1))  # assuming no lens distortion
-    face_rects = _detector(image, 0)  # find the face
-    if not face_rects:
-        setup.printv("Could not recognize a face in the image, returning none")
-        return None, None, None
-    shape = _predictor(image, face_rects[0])
-    shape = face_utils.shape_to_np(shape)
-    image_pts = numpy.float32([shape[17], shape[21], shape[22], shape[26],
-                               shape[36], shape[39], shape[42], shape[45],
-                               shape[31], shape[35], shape[48], shape[54],
-                               shape[57], shape[8]])
-    # estimate the translation and rotation coefficients:
-    success, rotation_vec, translation_vec = cv2.solvePnP(_object_pts, image_pts, mtx, dist)
-    # get the angles out of the transformation matrix:
-    rotation_mat, _ = cv2.Rodrigues(rotation_vec)
-    pose_mat = cv2.hconcat((rotation_mat, translation_vec))
-    _, _, _, _, _, _, angles = cv2.decomposeProjectionMatrix(pose_mat)
-    angles[0, 0] = angles[0, 0]*-1
-    if plot_arg is None:
-        # elevation, azimuth and tilt
-        return angles[0, 0], angles[1, 0], angles[2, 0]
-    else:
-        reprojectdst, _ = cv2.projectPoints(_reprojectsrc, rotation_vec,
-                                            translation_vec, mtx, dist)
-        reprojectdst = tuple(map(tuple, reprojectdst.reshape(8, 2)))
-
-        for (x, y) in shape:
-            image = image.astype(np.float32)
-            cv2.circle(image, (x, y), 3, (0, 0, 255), -1)
-            cv2.putText(image, "Elevation: " + "{:7.2f}".format(angles[0, 0]),
-                        (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
-                        thickness=2)
-            cv2.putText(image, "Azimuth: " + "{:7.2f}".format(angles[1, 0]),
-                        (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
-                        thickness=2)
-            cv2.putText(image, "Tilt: " + "{:7.2f}".format(angles[2, 0]),
-                        (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),
-                        thickness=2)
-        if plot_arg == "show":
-            matplotlib.pyplot.imshow(image, cmap="gray")
-            matplotlib.pyplot.show()
-        elif isinstance(plot_arg, matplotlib.axes._subplots.Axes):
-            plot_arg.imshow(image, cmap="gray")
-        elif isinstance(plot_arg, str):
-            matplotlib.pyplot.imshow(image, cmap="gray")
-            path = _location.parent/Path("log/"+plot_arg)
-            matplotlib.pyplot.savefig(path, dip=1200, format="pdf")
+class FlirCams:
+    def __init__(self):
+        self.system = PySpin.System.GetInstance()
+        self.cams = self._system.GetCameras()
+        self.ncams = self.cams.GetSize()
+        self.imsize = self.acquire_images(n=1).shape[0:2]
+        if self.ncams == 0:    # Finish if there are no cameras
+            self.cams.Clear()  # Clear camera list before releasing system
+            self._system.ReleaseInstance()  # Release system instance
+            logging.warning('No camera found!')
         else:
-            raise ValueError(
-                "plot_arg must be either 'show' (show the image), an "
-                "instance of matplotlib.axes (plot to that axes) or "
-                "a string (save to log folder as pdf with that name)")
+            for cam in self.cams:
+                cam.Init()  # Initialize camera
+            logging.info(f"initialized {self.ncams} FLIR camera(s)")
+
+    def acquire_images(self, n=1):
+        if hasattr(self, "imagesize"):
+            image_data = np.zeros((self.imsize)+(n, self.ncams), dtype="uint8")
+        else:
+            image_data = None
+        for cam in self.cams:  # start the cameras
+            node_acquisition_mode = PySpin.CEnumerationPtr(
+                cam.GetNodeMap().GetNode('AcquisitionMode'))
+            if (not PySpin.IsAvailable(node_acquisition_mode) or
+                    not PySpin.IsWritable(node_acquisition_mode)):
+                raise ValueError(
+                    'Unable to set acquisition to continuous, aborting...')
+            node_acquisition_mode_continuous = \
+                node_acquisition_mode.GetEntryByName('Continuous')
+            if (not PySpin.IsAvailable(node_acquisition_mode_continuous) or
+                    not PySpin.IsReadable(node_acquisition_mode_continuous)):
+                raise ValueError(
+                    'Unable to set acquisition to continuous, aborting...')
+            acquisition_mode_continuous = \
+                node_acquisition_mode_continuous.GetValue()
+            node_acquisition_mode.SetIntValue(acquisition_mode_continuous)
+            cam.BeginAcquisition()
+        for i_image in range(n):
+            for i_cam, cam in enumerate(self.cams):
+                time.sleep(0.01)
+                image_result = cam.GetNextImage()
+                if image_result.IsIncomplete():
+                    raise ValueError('Image incomplete: image status %d ...'
+                                     % image_result.GetImageStatus())
+                image = image_result.Convert(
+                    PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
+                image = image.GetNDArray()
+                image_result.Release()
+                if image_data is not None:
+                    image_data[:, :, i_image, i_cam] = image
+                else:
+                    image_data = image
+        return image_data
+
+
+class WebCams:
+    def __init__(self):
+        self.cams = []
+        stop = False
+        while stop is False:
+            cap = cv2.VideoCapture(0)
+            if cap.isOpened():
+                self.cams.append(cap)
+            else:
+                stop = True
+        logging.info("initialized %s webcams(s)" % (len(_cams)))
+        self.ncams = len(self.cams)
+        self.imsize = self.acquire_images(n=1).shape[0:2]
+
+    def acquire_images(self, n=1):
+        """
+            The webcam takes several pictures and reading only advances
+            the buffer one step at a time, thus grab all images and only
+            retrieve the latest one
+        """
+        if hasattr(self, "imagesize"):
+            image_data = np.zeros((self.imsize)+(n, self.ncams), dtype="uint8")
+        else:
+            image_data = None
+        for i_image in range(n):
+            for i_cam, cam in enumerate(self.cams):
+                for i in range(cv2.CAP_PROP_FRAME_COUNT):
+                    cam.grab()
+                ret, image = cam.retrieve()
+                if ret is False:
+                    logging.warning("could not acquire image...")
+            if image_data is not None:
+                image_data[:, :, i_image, i_cam] = image
+            else:
+                image_data = image
+        return image_data
+
+
+class VirtualCam:
+    def __init__(self):
+        self.ncams = 1
+        self.imsize = self.acquire_images(n=1).shape[0:2]
+
+    def acquire_images(self, n=1):
+        if hasattr(self, "imagesize"):
+            image_data = np.zeros((self.imsize)+(n, self.ncams), dtype="uint8")
+        else:
+            image_data = None
+
+
 
 
 def calibrate_camera(targets=None, n_reps=1, cams="all"):

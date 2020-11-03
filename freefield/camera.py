@@ -77,13 +77,33 @@ class Cameras:
 
 
     def calibrate_camera(self, n_reps=1):
+        """Calibrate camera(s) by computing the linear regression for a number of
+        points in camera and world coordinates.
+        If the camera is a webcam you need to give a list of tuples with
+        elevation and azimuth (in that order) of points in your environment.
+        You will be asked to point your head towards the target positions in
+        randomized order and press enter. If the cameras are the FLIR cameras in
+        the freefield the target positions are defined automatically (all speaker
+        positions that have LEDs attached). The LEDs will light up in randomized
+        order. Point your head towards the lit LED, and press the button on
+        the response box. For each position, repeated n times, the headpose will
+        be computed. The regression coefficients (slope and intercept) will be
+        stored in the environment variables _azi_reg and _ele_reg. The coordinates
+        used to compute the regression are also returned (mostly for debugging
+        purposes).
+        Attributes:
+        targets (list of tuples): elevation and azimuth for any number of
+            points in world coordinates
+        n_repeat (int): number of repetitions for each target (default = 1)
 
+        return: world_coordinates, camera_coordinates (list of tuples)
+        """
         # azimuth and elevation of a set of points in camera and world coordinates
         # one list for each camera
-        coords = pd.DataFrame(columns=["ele_cam", "azi_cam" "ele_world",
-                                       "azi_world", "cam", "frame", "n"])
+        coords = pd.DataFrame(columns=["ele_cam", "azi_ca
+                                       "ele_world", "azi_world", "cam", "frame", "n"])
         if _cam_type == "web" and targets is None:
-            raise ValueError("Define target positions for calibratin"g webcam!")
+            raise ValueError("Define target positions for calibrating webcam!")
         elif _cam_type == "freefield":
             targets = setup.all_leds()  # get the speakers that have a LED attached
             if setup._mode != "camera_calibration":

@@ -67,9 +67,10 @@ class Cameras:
             logging.warning("Camera is not calibrated!")
 
     def change_image_res(self, image, resolution):
-        width = height = int(self.imsize[1]*resolution)
-        image = image.resize((width, height), PIL.Image.ANTIALIAS)
         image = PIL.Image.fromarray(image)
+        width = int(self.imsize[1]*resolution)
+        height = int(self.imsize[0]*resolution)
+        image = image.resize((width, height), PIL.Image.ANTIALIAS)
         return image
 
     def convert_coordinates(self, coords):

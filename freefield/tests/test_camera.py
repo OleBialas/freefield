@@ -30,14 +30,7 @@ class VirtualCam(Cameras):
                     image_data = image
         return image_data
 
-width = height = int(self.imsize[1]*0.8)
-image = image.resize((width, height), PIL.Image.ANTIALIAS)
-image = PIL.Image.fromarray(image)
 
-plt.imshow(image)
-
-
-self = cam
 def test_camera():
     cam = VirtualCam()
     assert hasattr(cam, "imsize")

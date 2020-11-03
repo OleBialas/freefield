@@ -40,7 +40,7 @@ def test_camera():
 def test_headpose():
     imfolder = DIR/"tests"/"images"
     images = [im for im in os.listdir(imfolder) if "jpg" in im]
-    df = pd.read_csv(DIR/"tests"/"images"/"pose.csv")
+    df = pd.read_csv(DIR/"tests"/"pose.csv")
     df = df.where(pd.notnull(df), None)
     for thresh in [0.3, 0.9, 0.99]:
         pose_estimator = PoseEstimator(threshold=thresh)

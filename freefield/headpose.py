@@ -90,7 +90,7 @@ class PoseEstimator:
         """
         Get the bounding box of faces in image using dnn.
         """
-        if image.shape == 2:  # if greyscale, "fake" 3-channel image
+        if image.ndim == 2:  # if greyscale, "fake" 3-channel image
             image = np.repeat(image[..., np.newaxis], 3, axis=2)
             mean = image[:, :, 0]
         else:  # if image is RGB, subtract mean for each channel

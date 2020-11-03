@@ -16,7 +16,8 @@ class VirtualCam(Cameras):
 
         image = numpy.random.choice(os.listdir(DIR/"tests"/"images"))
         image = cv2.imread(str(DIR/"tests"/"images"/image))
-        if hasattr(self, "imagesize"):
+        image.shape
+        if hasattr(self, "imsize"):
             image_data = numpy.zeros((self.imsize)+(n, self.ncams),
                                      dtype="uint8")
         else:
@@ -32,6 +33,7 @@ class VirtualCam(Cameras):
 
 def test_camera():
     cam = VirtualCam()
+    assert hasattr(cam, "imsize")
     pose = cam.get_headpose(convert=False, average=False, n=5, resolution=.8)
 
 

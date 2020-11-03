@@ -130,7 +130,7 @@ class FlirCams(Cameras):
             logging.info(f"initialized {self.ncams} FLIR camera(s)")
 
     def acquire_images(self, n=1):
-        if hasattr(self, "imagesize"):
+        if hasattr(self, "imsize"):
             image_data = np.zeros((self.imsize)+(n, self.ncams), dtype="uint8")
         else:
             image_data = None
@@ -200,7 +200,7 @@ class WebCams(Cameras):
             the buffer one step at a time, thus grab all images and only
             retrieve the latest one
         """
-        if hasattr(self, "imagesize"):
+        if hasattr(self, "imsize"):
             image_data = np.zeros((self.imsize)+(n, self.ncams), dtype="uint8")
         else:
             image_data = None

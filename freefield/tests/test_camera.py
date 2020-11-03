@@ -30,7 +30,6 @@ class VirtualCam(Cameras):
                     image_data = image
         return image_data
 
-image.ndim
 
 def test_camera():
     cam = VirtualCam()

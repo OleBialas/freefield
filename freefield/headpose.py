@@ -95,7 +95,7 @@ class PoseEstimator:
         rows, cols, _ = image.shape
         confidences, faceboxes = [], []
         self.face_net.setInput(cv2.dnn.blobFromImage(
-            image, 1.0, (300, 300), (104.0, 177.0, 123.0), False, False))
+            image, scalefactor=1.0, size=(300, 300), mean=None)
         detections = self.face_net.forward()
         for result in detections[0, 0, :, :]:
             confidence = result[2]

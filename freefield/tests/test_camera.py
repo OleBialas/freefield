@@ -2,7 +2,6 @@ import numpy
 from freefield import DIR, Cameras
 import cv2
 import os
-from freefield import TESTDIR
 from freefield.headpose import PoseEstimator
 import pandas as pd
 import numpy as np

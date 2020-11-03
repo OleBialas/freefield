@@ -90,7 +90,7 @@ class PoseEstimator:
         """
         Get the bounding box of faces in image using dnn.
         """
-        rows, cols, _ = image.shape
+        rows, cols = image.shape
         confidences, faceboxes = [], []
         self.face_net.setInput(cv2.dnn.blobFromImage(
             image, 1.0, (300, 300), (104.0, 177.0, 123.0), False, False))

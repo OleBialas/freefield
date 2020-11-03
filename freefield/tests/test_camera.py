@@ -5,11 +5,11 @@ import os
 from freefield.headpose import PoseEstimator
 import pandas as pd
 import numpy as np
-from matplotlib import pyplot as plt
-import PIL
+
 
 class VirtualCam(Cameras):
     def __init__(self):
+        super().__init__()
         self.ncams = 1
         self.imsize = self.acquire_images(n=1).shape[0:2]
 

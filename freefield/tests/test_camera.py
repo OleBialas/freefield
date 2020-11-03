@@ -54,5 +54,3 @@ def test_headpose():
             else:
                 assert azi == row["azimuth"].values[0]
                 assert ele == row["elevation"].values[0]
-
-test_headpose()

@@ -50,7 +50,7 @@ class Cameras:
                 if resolution < 1.0:
                     image = self.change_image_res(image, resolution)
                 # get the headpose,
-                ele, azi, _ = self.model.pose_from_image(numpy.asarray(image))
+                ele, azi, _ = self.model.pose_from_image(image)
                 pose = pose.append(
                         pd.DataFrame(
                             [[ele, azi, i_cam, "world"]],
@@ -71,7 +71,7 @@ class Cameras:
         width = int(self.imsize[1]*resolution)
         height = int(self.imsize[0]*resolution)
         image = image.resize((width, height), PIL.Image.ANTIALIAS)
-        return image
+        return numpy.asarray(image)
 
     def convert_coordinates(self, coords):
         for cam in np.unique(coords["cam"]):  # convert for each cam ...

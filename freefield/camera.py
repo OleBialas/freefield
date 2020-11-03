@@ -6,8 +6,7 @@ except ModuleNotFoundError:
           "You can download the .whl here: \n"
           "https://www.flir.com/products/spinnaker-sdk/")
 import PIL
-from freefield import PoseEstimator, DIR
-from slab.psychoacoustics import Trialsequence
+from freefield import PoseEstimator
 import time
 import cv2
 from scipy import stats
@@ -16,6 +15,13 @@ import pandas as pd
 import logging
 import numpy as np
 from abc import abstractmethod
+
+
+def initialize_cameras(kind="flir"):
+    if kind.lower() == "flir":
+        return FlirCams()
+    elif kind.lower() == "webcam":
+        return WebCams()
 
 
 class Cameras:
@@ -27,8 +33,9 @@ class Cameras:
     def acquire_images(self) -> None:
         pass
 
-    def test_function(self):
-        print("Hello")
+    @abstractmethod
+    def halt(self) -> None:
+        pass
 
     def get_headpose(self, convert=True, average=True, n=1, resolution=1.0):
         """Acquire n images and compute headpose (elevation and azimuth). If
@@ -75,72 +82,36 @@ class Cameras:
                         / reg["b"].values)
                 coords.insert(3, "frame", "world")
 
+    def calibrate(self, coords, plot=True):
+        calibration = pd.DataFrame(columns=["a", "b", "cam", "angle"])
+        if plot:
+            fig, ax = plt.subplots(2)
+            fig.suptitle("World vs Camera Coordinates")
 
-    def calibrate_camera(self, n_reps=1):
-        """Calibrate camera(s) by computing the linear regression for a number of
-        points in camera and world coordinates.
-        If the camera is a webcam you need to give a list of tuples with
-        elevation and azimuth (in that order) of points in your environment.
-        You will be asked to point your head towards the target positions in
-        randomized order and press enter. If the cameras are the FLIR cameras in
-        the freefield the target positions are defined automatically (all speaker
-        positions that have LEDs attached). The LEDs will light up in randomized
-        order. Point your head towards the lit LED, and press the button on
-        the response box. For each position, repeated n times, the headpose will
-        be computed. The regression coefficients (slope and intercept) will be
-        stored in the environment variables _azi_reg and _ele_reg. The coordinates
-        used to compute the regression are also returned (mostly for debugging
-        purposes).
-        Attributes:
-        targets (list of tuples): elevation and azimuth for any number of
-            points in world coordinates
-        n_repeat (int): number of repetitions for each target (default = 1)
+        for cam in pd.unique(coords["cam"]):  # calibrate each camera
+            cam_coords = coords[coords["cam"] == cam]
+            # find regression coefficients for azimuth and elevation
+            for i, angle in enumerate(["ele", "azi"]):
+                y = cam_coords[angle+"_cam"].values.astype(float)
+                x = cam_coords[angle+"_world"].values.astype(float)
+                b, a, r, _, _ = stats.linregress(x, y)
+                if np.abs(r) < 0.85:
+                    logging.warning(f"Correlation for camera {cam}",
+                                    f"{angle} is only {r}!")
+                row = {"a": a, "b": b, "cam": cam, "angle": angle}
+                calibration = calibration.append(row, ignore_index=True)
+                if plot:
+                    ax[i].scatter(x, y)
+                    ax[i].plot(x, x*b+a, linestyle="--", label=cam)
+                    ax[i].set_title(angle)
+                    ax[i].legend()
+                    ax[i].set_xlabel("world coordinates in degree")
+                    ax[i].set_ylabel("camera coordinates in degree")
 
-        return: world_coordinates, camera_coordinates (list of tuples)
-        """
-        # azimuth and elevation of a set of points in camera and world coordinates
-        # one list for each camera
-        coords = pd.DataFrame(columns=["ele_cam", "azi_ca
-                                       "ele_world", "azi_world", "cam", "frame", "n"])
-        if _cam_type == "web" and targets is None:
-            raise ValueError("Define target positions for calibrating webcam!")
-        elif _cam_type == "freefield":
-            targets = setup.all_leds()  # get the speakers that have a LED attached
-            if setup._mode != "camera_calibration":
-                setup.initialize_devices(mode="camera_calibration")
-        elif _cam_type is None:
-            raise ValueError("Initialize Camera before calibration!")
-        if not setup._mode == "camera_calibration":  # initialize setup
-            setup.initialize_devices(mode="camera_calibration")
-        seq = Trialsequence(n_reps=n_reps, conditions=targets)
-        while seq.n_remaining:
-            target = seq.__next__()
-            if _cam_type == "web":  # look at target position and press enter
-                ele, azi = target[0], target[1]
-                input("point your head towards the target at elevation: %s and "
-                      "azimuth %s. \n Then press enter to take an image an get "
-                      "the headpose" % (ele, azi))
-            elif _cam_type == "freefield":  # light LED and wait for button press
-                ele, azi = target[4], target[3]
-                proc, bitval = target[6], target[5]
-                setup.printv("trial nr %s: speaker at ele: %s and azi: of %s" %
-                             (seq.this_n, ele, azi))
-                setup.set_variable(variable="bitmask", value=bitval, proc=proc)
-                while not setup.get_variable(variable="response", proc="RP2",
-                                             supress_print=True):
-                    time.sleep(0.1)  # wait untill button is pressed
-            pose = get_headpose(average=False, convert=False, cams=cams)
-            pose = pose.rename(columns={"ele": "ele_cam", "azi": "azi_cam"})
-            pose.insert(0, "n", seq.this_n)
-            pose.insert(2, "ele_world", ele)
-            pose.insert(4, "azi_world", azi)
-            pose = pose.dropna()
-            coords = coords.append(pose, ignore_index=True, sort=True)
-        if _cam_type == "freefield":
-            setup.set_variable(variable="bitmask", value=0, proc="RX8s")
+        self.calibration = calibration
+        if plot:
+            plt.show()
 
-        camera_to_world(coords)
-        return coords
 
 class FlirCams(Cameras):
     def __init__(self):
@@ -197,6 +168,16 @@ class FlirCams(Cameras):
                     image_data = image
         return image_data
 
+    def halt(self):
+        for cam in self.cams:
+            if cam.IsInitialized():
+                cam.EndAcquisition()
+                cam.DeInit()
+            del cam
+        self.cams.Clear()
+        self.system.ReleaseInstance()
+        logging.info("Halting FLIR cameras.")
+
 
 class WebCams(Cameras):
     def __init__(self):
@@ -236,131 +217,7 @@ class WebCams(Cameras):
                 image_data = image
         return image_data
 
-
-def initialize_cameras(kind="flir"):
-    if kind.lower() == "flir":
-        return FlirCams()
-    elif kind.lower() == "webcam":
-        return WebCams()
-
-
-"""
-
-def calibrate_camera(targets=None, n_reps=1, cams="all"):
-    Calibrate camera(s) by computing the linear regression for a number of
-    points in camera and world coordinates.
-    If the camera is a webcam you need to give a list of tuples with
-    elevation and azimuth (in that order) of points in your environment.
-    You will be asked to point your head towards the target positions in
-    randomized order and press enter. If the cameras are the FLIR cameras in
-    the freefield the target positions are defined automatically (all speaker
-    positions that have LEDs attached). The LEDs will light up in randomized
-    order. Point your head towards the lit LED, and press the button on
-    the response box. For each position, repeated n times, the headpose will
-    be computed. The regression coefficients (slope and intercept) will be
-    stored in the environment variables _azi_reg and _ele_reg. The coordinates
-    used to compute the regression are also returned (mostly for debugging
-    purposes).
-    Attributes:
-    targets (list of tuples): elevation and azimuth for any number of
-        points in world coordinates
-    n_repeat (int): number of repetitions for each target (default = 1)
-
-    return: world_coordinates, camera_coordinates (list of tuples)
-
-    # azimuth and elevation of a set of points in camera and world coordinates
-    # one list for each camera
-    coords = pd.DataFrame(columns=["ele_cam", "azi_ca
-                                   "ele_world", "azi_world", "cam", "frame", "n"])
-    if _cam_type == "web" and targets is None:
-        raise ValueError("Define target positions for calibrating webcam!")
-    elif _cam_type == "freefield":
-        targets = setup.all_leds()  # get the speakers that have a LED attached
-        if setup._mode != "camera_calibration":
-            setup.initialize_devices(mode="camera_calibration")
-    elif _cam_type is None:
-        raise ValueError("Initialize Camera before calibration!")
-    if not setup._mode == "camera_calibration":  # initialize setup
-        setup.initialize_devices(mode="camera_calibration")
-    seq = Trialsequence(n_reps=n_reps, conditions=targets)
-    while seq.n_remaining:
-        target = seq.__next__()
-        if _cam_type == "web":  # look at target position and press enter
-            ele, azi = target[0], target[1]
-            input("point your head towards the target at elevation: %s and "
-                  "azimuth %s. \n Then press enter to take an image an get "
-                  "the headpose" % (ele, azi))
-        elif _cam_type == "freefield":  # light LED and wait for button press
-            ele, azi = target[4], target[3]
-            proc, bitval = target[6], target[5]
-            setup.printv("trial nr %s: speaker at ele: %s and azi: of %s" %
-                         (seq.this_n, ele, azi))
-            setup.set_variable(variable="bitmask", value=bitval, proc=proc)
-            while not setup.get_variable(variable="response", proc="RP2",
-                                         supress_print=True):
-                time.sleep(0.1)  # wait untill button is pressed
-        pose = get_headpose(average=False, convert=False, cams=cams)
-        pose = pose.rename(columns={"ele": "ele_cam", "azi": "azi_cam"})
-        pose.insert(0, "n", seq.this_n)
-        pose.insert(2, "ele_world", ele)
-        pose.insert(4, "azi_world", azi)
-        pose = pose.dropna()
-        coords = coords.append(pose, ignore_index=True, sort=True)
-    if _cam_type == "freefield":
-        setup.set_variable(variable="bitmask", value=0, proc="RX8s")
-
-    camera_to_world(coords)
-    return coords
-
-
-def camera_to_world(coords, plot=True):
-    Find linear regression for camera and world coordinates and store
-    them in global variables
-    global _cal
-    _cal = pd.DataFrame(columns=["a", "b", "cam", "angle", "min", "max"])
-    if plot:
-        fig, ax = plt.subplots(2)
-        fig.suptitle("World vs Camera Coordinates")
-
-    for cam in pd.unique(coords["cam"]):  # calibrate each camera
-        cam_coords = coords[coords["cam"] == cam]
-        # find regression coefficients for azimuth and elevation
-        for i, angle in enumerate(["ele", "azi"]):
-            y = cam_coords[angle+"_cam"].values.astype(float)
-            x = cam_coords[angle+"_world"].values.astype(float)
-            min, max = cam_coords[angle+"_world"].min(), cam_coords[angle+"_world"].max()
-            b, a, r, _, _ = stats.linregress(x, y)
-            if np.abs(r) < 0.85:
-                setup.printv("For cam %s %s correlation between camera and"
-                             "world coordinates is only %s! \n"
-                             "There might be something wrong..."
-                             % (cam, angle, r))
-            _cal = _cal.append(pd.DataFrame([[a, b, cam, angle, min, max]],
-                                            columns=["a", "b", "cam", "angle", "min", "max"]),
-                               ignore_index=True)
-            if plot:
-                ax[i].scatter(x, y)
-                ax[i].plot(x, x*b+a, linestyle="--", label=cam)
-                ax[i].set_title(angle)
-                ax[i].legend()
-                ax[i].set_xlabel("world coordinates in degree")
-                ax[i].set_ylabel("camera coordinates in degree")
-    if plot:
-        plt.show()
-
-
-def halt():
-    global _cams
-    if _cam_type == "freefield":
-        for cam in _cams:
-            if cam.IsInitialized():
-                cam.EndAcquisition()
-                cam.DeInit()
-            del cam
-        _cams.Clear()
-        _system.ReleaseInstance()
-    if _cam_type == "web":
-        for cam in _cams:
+    def halt(self):
+        for cam in self.cams:
             cam.release()
-    setup.printv("Deinitializing _camera...")
-"""
+        logging.info("Halting webcams.")

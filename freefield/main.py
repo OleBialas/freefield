@@ -296,6 +296,50 @@ def check_pose(target=None, var=10):
 
 
 # functions implementing complete procedures:
+    def calibrate_camera(self, n_reps=1):
+        # azimuth and elevation of a set of points in camera and world coords
+        # one list for each camera
+        coords = pd.DataFrame(columns=["ele_cam", "azi_cam", "ele_world",
+                                       "azi_world", "cam", "frame", "n"])
+        if _cam_type == "web" and targets is None:
+            raise ValueError("Define target positions for calibrating webcam!")
+        elif _cam_type == "freefield":
+            targets = setup.all_leds()  # get the speakers that have a LED attached
+            if setup._mode != "camera_calibration":
+                setup.initialize_devices(mode="camera_calibration")
+        elif _cam_type is None:
+            raise ValueError("Initialize Camera before calibration!")
+        if not setup._mode == "camera_calibration":  # initialize setup
+            setup.initialize_devices(mode="camera_calibration")
+        seq = Trialsequence(n_reps=n_reps, conditions=targets)
+        while seq.n_remaining:
+            target = seq.__next__()
+            if _cam_type == "web":  # look at target position and press enter
+                ele, azi = target[0], target[1]
+                input("point your head towards the target at elevation: %s and "
+                      "azimuth %s. \n Then press enter to take an image an get "
+                      "the headpose" % (ele, azi))
+            elif _cam_type == "freefield":  # light LED and wait for button press
+                ele, azi = target[4], target[3]
+                proc, bitval = target[6], target[5]
+                setup.printv("trial nr %s: speaker at ele: %s and azi: of %s" %
+                             (seq.this_n, ele, azi))
+                setup.set_variable(variable="bitmask", value=bitval, proc=proc)
+                while not setup.get_variable(variable="response", proc="RP2",
+                                             supress_print=True):
+                    time.sleep(0.1)  # wait untill button is pressed
+            pose = get_headpose(average=False, convert=False, cams=cams)
+            pose = pose.rename(columns={"ele": "ele_cam", "azi": "azi_cam"})
+            pose.insert(0, "n", seq.this_n)
+            pose.insert(2, "ele_world", ele)
+            pose.insert(4, "azi_world", azi)
+            pose = pose.dropna()
+            coords = coords.append(pose, ignore_index=True, sort=True)
+        if _cam_type == "freefield":
+            setup.set_variable(variable="bitmask", value=0, proc="RX8s")
+
+
+
 def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=False):
     """
     Run a basic localization test where the same sound is played from different

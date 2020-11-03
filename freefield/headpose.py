@@ -92,10 +92,13 @@ class PoseEstimator:
         """
         if image.shape == 2:  # if greyscale, "fake" 3-channel image
             image = np.repeat(image[..., np.newaxis], 3, axis=2)
+            mean = image[:, :, 0]
+        else:  # if image is RGB, subtract mean for each channel
+            mean = (image[:, :, 0], image[:, :, 1], image[:, :, 2])
         rows, cols, _ = image.shape
         confidences, faceboxes = [], []
         self.face_net.setInput(cv2.dnn.blobFromImage(
-            image, 1.0, (300, 300), (104.0, 177.0, 123.0), False, False))
+            image, 1.0, (300, 300), mean, False, False))
         detections = self.face_net.forward()
         for result in detections[0, 0, :, :]:
             confidence = result[2]

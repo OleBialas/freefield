@@ -47,7 +47,8 @@ class Cameras:
         for i_cam in range(images.shape[3]):
             for i_image in range(images.shape[2]):
                 image = images[:, :, i_image, i_cam]  # get image from array
-                image = self.change_image_res(image, resolution)
+                if resolution < 1.0:
+                    image = self.change_image_res(image, resolution)
                 # get the headpose,
                 ele, azi, _ = self.model.pose_from_image(numpy.asarray(image))
                 pose = pose.append(

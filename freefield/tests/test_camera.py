@@ -5,7 +5,8 @@ import os
 from freefield.headpose import PoseEstimator
 import pandas as pd
 import numpy as np
-
+from matplotlib import pyplot as plt
+import PIL
 
 class VirtualCam(Cameras):
     def __init__(self):
@@ -15,8 +16,7 @@ class VirtualCam(Cameras):
     def acquire_images(self, n=1):
 
         image = numpy.random.choice(os.listdir(DIR/"tests"/"images"))
-        image = cv2.imread(str(DIR/"tests"/"images"/image))
-        image.shape
+        image = cv2.imread(str(DIR/"tests"/"images"/image))[:, :, 0]
         if hasattr(self, "imsize"):
             image_data = numpy.zeros((self.imsize)+(n, self.ncams),
                                      dtype="uint8")
@@ -30,7 +30,14 @@ class VirtualCam(Cameras):
                     image_data = image
         return image_data
 
+width = height = int(self.imsize[1]*0.8)
+image = image.resize((width, height), PIL.Image.ANTIALIAS)
+image = PIL.Image.fromarray(image)
 
+plt.imshow(image)
+
+
+self = cam
 def test_camera():
     cam = VirtualCam()
     assert hasattr(cam, "imsize")

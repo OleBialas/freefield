@@ -43,7 +43,7 @@ class Cameras:
         the camera into world coordinates
         """
         pose = pd.DataFrame(columns=["ele", "azi", "cam"])
-        images = self.acquire_image(n)  # take images
+        images = self.acquire_images(n)  # take images
         for i_cam in range(images.shape[3]):
             for i_image in range(images.shape[2]):
                 image = images[:, :, i_image, i_cam]  # get image from array

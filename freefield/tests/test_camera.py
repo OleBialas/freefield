@@ -14,8 +14,8 @@ class VirtualCam(Cameras):
 
     def acquire_images(self, n=1):
 
-        image = numpy.random.choice(os.listdir(DIR/"test"/"images"))
-        image = cv2.imread(image)
+        image = numpy.random.choice(os.listdir(DIR/"tests"/"images"))
+        image = cv2.imread(str(DIR/"tests"/"images"/image))
         if hasattr(self, "imagesize"):
             image_data = numpy.zeros((self.imsize)+(n, self.ncams),
                                      dtype="uint8")

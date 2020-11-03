@@ -30,6 +30,7 @@ class VirtualCam(Cameras):
                     image_data = image
         return image_data
 
+image.ndim
 
 def test_camera():
     cam = VirtualCam()
@@ -38,14 +39,14 @@ def test_camera():
 
 
 def test_headpose():
-    imfolder = TESTDIR/"images"
+    imfolder = DIR/"tests"/"images"
     images = [im for im in os.listdir(imfolder) if "jpg" in im]
-    df = pd.read_csv(TESTDIR/"images"/"pose.csv")
+    df = pd.read_csv(DIR/"tests"/"images"/"pose.csv")
     df = df.where(pd.notnull(df), None)
     for thresh in [0.3, 0.9, 0.99]:
         pose_estimator = PoseEstimator(threshold=thresh)
         for image in images:
-            img = cv2.imread(str(TESTDIR/"images"/image))
+            img = cv2.imread(str(DIR/"tests"/"images"/image))
             azi, ele = pose_estimator.pose_from_image(img)
             row = df[(df['image'] == image) & (df['threshold'] == thresh)]
             if azi is not None and ele is not None:
@@ -54,3 +55,5 @@ def test_headpose():
             else:
                 assert azi == row["azimuth"].values[0]
                 assert ele == row["elevation"].values[0]
+
+test_headpose()

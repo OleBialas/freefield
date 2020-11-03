@@ -44,22 +44,19 @@ class Cameras:
                 # get the headpose,
                 ele, azi, _ = self.model.pose_from_image(numpy.asarray(image))
                 pose = pose.append(
-                    pd.DataFrame([[ele, azi, i_cam, "world"]],
-                                 columns=["ele", "azi", "cam", "camera"]))
-        if len(pose.dropna()) > 0:
+                        pd.DataFrame(
+                            [[ele, azi, i_cam, "world"]],
+                            columns=["ele", "azi", "cam", "frame"]))
+        if len(pose.dropna()) == 0:
             return pose  # if all are NaN, no face was found in any image
         if convert and (self.calibration is not None):
             pose = self.convert_coordinates(pose)
-
-        if average:  # only return the mean
-            if not convert:
-                raise ValueError("Can only average after converting coordinates!")
-            return pose.ele.mean(), pose.azi.mean()
-        else:  # return the whole data frame
-            return pose
+            if average:  # only return the mean
+                return pose.ele.mean(), pose.azi.mean()
+            else:  # return the whole data frame
+                return pose
         else:
-            raise ValueError("Can't convert coordinates because camera is"
-                             "not calibrated!")
+            logging.warning("Camera is not calibrated!")
 
     def change_image_res(self, image, resolution):
         width = height = int(self.imsize[1]*resolution)
@@ -67,17 +64,63 @@ class Cameras:
         image = PIL.Image.fromarray(image)
         return image
 
-    def convert_coordinates(self, coordinates):
-        for cam in np.unique(coordinates["cam"]):
-            for angle, expected in zip(["azi", "ele"], target):
-                reg = _cal[(_cal["cam"] == cam) & (_cal["angle"] == angle)]
-                        if expected is not None:  # only use cam if traget is in range
-                            if not reg["min"].values[0] <= expected <= reg["max"].values[0]:
-                                pose.loc[pose["cam"] == cam, angle] = np.nan
-                        pose.loc[pose["cam"] == cam, angle] = (pose[pose["cam"] == cam][angle] -
-                                                               reg["a"].values)/reg["b"].values
-            pose.insert(3, "frame", "world")
+    def convert_coordinates(self, coords):
+        for cam in np.unique(coords["cam"]):  # convert for each cam ...
+            for angle in ["azi", "ele"]:  # ... and each angle
+                reg = self.calibration[(self.calibration["cam"] == cam)
+                                       (self.calibration["angle"] == angle)]
 
+                coords.loc[coords["cam"] == cam, angle] = \
+                    ((coords[coords["cam"] == cam][angle] - reg["a"].values)
+                        / reg["b"].values)
+                coords.insert(3, "frame", "world")
+
+
+    def calibrate_camera(self, n_reps=1):
+
+        # azimuth and elevation of a set of points in camera and world coordinates
+        # one list for each camera
+        coords = pd.DataFrame(columns=["ele_cam", "azi_cam" "ele_world",
+                                       "azi_world", "cam", "frame", "n"])
+        if _cam_type == "web" and targets is None:
+            raise ValueError("Define target positions for calibratin"g webcam!")
+        elif _cam_type == "freefield":
+            targets = setup.all_leds()  # get the speakers that have a LED attached
+            if setup._mode != "camera_calibration":
+                setup.initialize_devices(mode="camera_calibration")
+        elif _cam_type is None:
+            raise ValueError("Initialize Camera before calibration!")
+        if not setup._mode == "camera_calibration":  # initialize setup
+            setup.initialize_devices(mode="camera_calibration")
+        seq = Trialsequence(n_reps=n_reps, conditions=targets)
+        while seq.n_remaining:
+            target = seq.__next__()
+            if _cam_type == "web":  # look at target position and press enter
+                ele, azi = target[0], target[1]
+                input("point your head towards the target at elevation: %s and "
+                      "azimuth %s. \n Then press enter to take an image an get "
+                      "the headpose" % (ele, azi))
+            elif _cam_type == "freefield":  # light LED and wait for button press
+                ele, azi = target[4], target[3]
+                proc, bitval = target[6], target[5]
+                setup.printv("trial nr %s: speaker at ele: %s and azi: of %s" %
+                             (seq.this_n, ele, azi))
+                setup.set_variable(variable="bitmask", value=bitval, proc=proc)
+                while not setup.get_variable(variable="response", proc="RP2",
+                                             supress_print=True):
+                    time.sleep(0.1)  # wait untill button is pressed
+            pose = get_headpose(average=False, convert=False, cams=cams)
+            pose = pose.rename(columns={"ele": "ele_cam", "azi": "azi_cam"})
+            pose.insert(0, "n", seq.this_n)
+            pose.insert(2, "ele_world", ele)
+            pose.insert(4, "azi_world", azi)
+            pose = pose.dropna()
+            coords = coords.append(pose, ignore_index=True, sort=True)
+        if _cam_type == "freefield":
+            setup.set_variable(variable="bitmask", value=0, proc="RX8s")
+
+        camera_to_world(coords)
+        return coords
 
 class FlirCams(Cameras):
     def __init__(self):
@@ -182,46 +225,6 @@ def initialize_cameras(kind="flir"):
 
 
 """
-    def get_headpose(self, convert=True, average=True, n=1, resolution=1.0):
-        Acquire n images and compute headpose (elevation and azimuth). If
-        convert is True use the regression coefficients to convert
-        the camera into world coordinates
-        pose = pd.DataFrame(columns=["ele", "azi", "cam"])
-        images = self.acquire_image(cams, n)  # take images
-        for i_cam in range(images.shape[3]):
-            for i_image in range(images.shape[2]):
-                # change resolution of the image
-                image = PIL.Image.fromarray(images[:, :, i_image, i_cam])
-                width = height = int(cams.imsize[1]*resolution)
-                image = image.resize((width, height), PIL.Image.ANTIALIAS)
-                ele, azi, _ = model.pose_from_image(numpy.asarray(image))
-                row = pd.DataFrame([[ele, azi, i_cam]],
-                                   columns=["ele", "azi", "cam"])
-                pose = pose.append(row)
-        if convert:  # convert azimuth and elevation to world coordinates
-            if len(pose.dropna()) > 0:
-                if _cal is None:
-                    raise ValueError("Can't convert coordinates because camera is"
-                                     "not calibrated!")
-                else:
-                    for cam in np.unique(pose["cam"]):
-                        for angle, expected in zip(["azi", "ele"], target):
-                            reg = _cal[(_cal["cam"] == cam) & (_cal["angle"] == angle)]
-                            if expected is not None:  # only use cam if traget is in range
-                                if not reg["min"].values[0] <= expected <= reg["max"].values[0]:
-                                    pose.loc[pose["cam"] == cam, angle] = np.nan
-                            pose.loc[pose["cam"] == cam, angle] = (pose[pose["cam"] == cam][angle] -
-                                                                   reg["a"].values)/reg["b"].values
-                pose.insert(3, "frame", "world")
-            else:
-                pose.insert(3, "frame", "camera")
-        if average:  # only return the mean
-            if not convert:
-                raise ValueError("Can only average after converting coordinates!")
-            return pose.ele.mean(), pose.azi.mean()
-        else:  # return the whole data frame
-            return pose
-
 
 def calibrate_camera(targets=None, n_reps=1, cams="all"):
     Calibrate camera(s) by computing the linear regression for a number of
@@ -248,9 +251,6 @@ def calibrate_camera(targets=None, n_reps=1, cams="all"):
     # azimuth and elevation of a set of points in camera and world coordinates
     # one list for each camera
     coords = pd.DataFrame(columns=["ele_cam", "azi_ca
-
-Apparently, this user prefers to keep an air of mystery about them.
-m",
                                    "ele_world", "azi_world", "cam", "frame", "n"])
     if _cam_type == "web" and targets is None:
         raise ValueError("Define target positions for calibrating webcam!")

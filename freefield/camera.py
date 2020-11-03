@@ -57,14 +57,16 @@ class Cameras:
                             columns=["ele", "azi", "cam", "frame"]))
         if len(pose.dropna()) == 0:
             return pose  # if all are NaN, no face was found in any image
-        if convert and (self.calibration is not None):
-            pose = self.convert_coordinates(pose)
-            if average:  # only return the mean
-                return pose.ele.mean(), pose.azi.mean()
-            else:  # return the whole data frame
-                return pose
-        else:
-            logging.warning("Camera is not calibrated!")
+        if convert:
+            if self.calibration is None:
+                logging.warning("Camera is not calibrated!")
+                return None
+            else:
+                pose = self.convert_coordinates(pose)
+        if average:  # only return the mean
+            return pose.ele.mean(), pose.azi.mean()
+        else:  # return the whole data frame
+            return pose
 
     def change_image_res(self, image, resolution):
         image = PIL.Image.fromarray(image)

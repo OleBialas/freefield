@@ -24,7 +24,7 @@ model_points = np.array([
 
 
 class PoseEstimator:
-    def __init__(self, threshold=.9):
+    def __init__(self, threshold=.8):
         try:
             self.face_net = cv2.dnn.readNetFromCaffe(
                 str(DIR/'data'/"models"/"prototxt"),

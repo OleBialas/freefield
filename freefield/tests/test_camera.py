@@ -38,6 +38,12 @@ def test_camera():
     assert len(pose) == 5
 
 
+def test_calibration():
+    cam = VirtualCam()
+    coords = pd.read_csv(DIR/"tests"/"coordinates.csv")
+    cam.calibrate(coords)
+
+
 def test_headpose():
     imfolder = DIR/"tests"/"images"
     images = [im for im in os.listdir(imfolder) if "jpg" in im]

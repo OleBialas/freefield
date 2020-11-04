@@ -178,7 +178,15 @@ class PoseEstimator:
         return [left_x, top_y, right_x, bottom_y]
 
     @staticmethod
-    def box_in_image(box, image):
+    def box_in_image(box, image):# 3D-model points to which the points extracted from an image are matched:
+model_points = np.array([
+                            (0.0, 0.0, 0.0),             # Nose tip
+                            (0.0, -330.0, -65.0),        # Chin
+                            (-225.0, 170.0, -135.0),     # Left eye corner
+                            (225.0, 170.0, -135.0),      # Right eye corner
+                            (-150.0, -150.0, -125.0),    # Left Mouth corner
+                            (150.0, -150.0, -125.0)      # Right mouth corner
+                        ])
         """Check if the box is in image"""
         r = image.shape[0]  # rows
         c = image.shape[1]  # columns

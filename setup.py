@@ -25,6 +25,6 @@ setup(name='freefield',
       packages=find_packages(),
       package_data={'freefield': ['data/tables/*', 'data/sounds/*',
                                   'data/rcx/*', 'data/models/*',
-                                  'data/models/pose_model']},
+                                  'data/models/pose_model/*']},
       include_package_data=True,
       zip_safe=False)

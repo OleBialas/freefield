@@ -92,9 +92,10 @@ class PoseEstimator:
         """
         if image.ndim == 2:  # if greyscale, "fake" 3-channel image
             image = np.repeat(image[..., np.newaxis], 3, axis=2)
-            mean = image[:, :, 0].mean()
+            mean = int(image[:, :, 0].mean())
         else:  # if image is RGB, subtract mean for each channel
-            mean = (image[:, :, 0], image[:, :, 1], image[:, :, 2])
+            mean = \
+                (int(image[:, :, 0]), int(image[:, :, 1]), int(image[:, :, 2])
         rows, cols, _ = image.shape
         confidences, faceboxes = [], []
         self.face_net.setInput(cv2.dnn.blobFromImage(

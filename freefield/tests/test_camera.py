@@ -35,6 +35,7 @@ def test_camera():
     cam = VirtualCam()
     assert hasattr(cam, "imsize")
     pose = cam.get_headpose(convert=False, average=False, n=5, resolution=.8)
+    assert len(pose) == 5
 
 
 def test_headpose():

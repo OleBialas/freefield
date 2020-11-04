@@ -95,7 +95,7 @@ class PoseEstimator:
             mean = int(image[:, :, 0].mean())
         else:  # if image is RGB, subtract mean for each channel
             mean = \
-                (int(image[:, :, 0]), int(image[:, :, 1]), int(image[:, :, 2])
+                (int(image[:, :, 0]), int(image[:, :, 1]), int(image[:, :, 2]))
         rows, cols, _ = image.shape
         confidences, faceboxes = [], []
         self.face_net.setInput(cv2.dnn.blobFromImage(

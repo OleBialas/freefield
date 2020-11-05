@@ -12,15 +12,20 @@ from tensorflow import keras
 from freefield import DIR
 import logging
 
-# 3D-model points to which the points extracted from an image are matched:
-model_points = np.array([
-                            (0.0, 0.0, 0.0),             # Nose tip
-                            (0.0, -330.0, -65.0),        # Chin
-                            (-225.0, 170.0, -135.0),     # Left eye corner
-                            (225.0, 170.0, -135.0),      # Right eye corner
-                            (-150.0, -150.0, -125.0),    # Left Mouth corner
-                            (150.0, -150.0, -125.0)      # Right mouth corner
-                        ])
+model_points = np.float32([[6.825897, 6.760612, 4.402142],
+                          [1.330353, 7.122144, 6.903745],
+                          [-1.330353, 7.122144, 6.903745],
+                          [-6.825897, 6.760612, 4.402142],
+                          [5.311432, 5.485328, 3.987654],
+                          [1.789930, 5.393625, 4.413414],
+                          [-1.789930, 5.393625, 4.413414],
+                          [-5.311432, 5.485328, 3.987654],
+                          [2.005628, 1.409845, 6.165652],
+                          [-2.005628, 1.409845, 6.165652],
+                          [2.774015, -2.080775, 5.048531],
+                          [-2.774015, -2.080775, 5.048531],
+                          [0.000000, -3.116408, 6.097667],
+                          [0.000000, -7.415691, 4.070434]])
 
 
 class PoseEstimator:
@@ -66,17 +71,13 @@ class PoseEstimator:
             marks[:, 0] += facebox[0]
             marks[:, 1] += facebox[1]
             shape = marks.astype(np.uint)
-            image_points = np.array([
-                                    shape[30],     # Nose tip
-                                    shape[8],     # Chin
-                                    shape[36],     # Left eye left corner
-                                    shape[45],     # Right eye right corne
-                                    shape[48],     # Left Mouth corner
-                                    shape[54]      # Right mouth corner
-                                    ], dtype="double")
+            image_pts = np.float32([shape[17], shape[21], shape[22], shape[26],
+                                    shape[36], shape[39], shape[42], shape[45],
+                                    shape[31], shape[35], shape[48], shape[54],
+                                    shape[57], shape[8]])
             dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
             (success, rotation_vec, translation_vec) = \
-                cv2.solvePnP(model_points, image_points, camera_matrix,
+                cv2.solvePnP(model_points, image_pts, camera_matrix,
                              dist_coeffs)
 
             rotation_mat, _ = cv2.Rodrigues(rotation_vec)

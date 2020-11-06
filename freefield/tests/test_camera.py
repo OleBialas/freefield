@@ -38,11 +38,13 @@ def test_camera():
 
 def test_calibration():
     cam = VirtualCam()
+    pose = cam.get_headpose(convert=True, average=False, n=5, resolution=.8)
+    assert pose is None
     coords = pd.read_csv(DIR/"tests"/"coordinates.csv")
     cam.calibrate(coords)
     pose = cam.get_headpose(convert=False, average=False, n=5, resolution=.8)
     assert len(pose) == 5
     assert all(pose.frame == "camera")
-    pose = cam.get_headpose(convert=True, average=True, n=5, resolution=.8)
+    pose = cam.get_headpose(convert=True, average=False, n=5, resolution=.8)
     assert len(pose) == 1
     assert all(pose.frame == "world")

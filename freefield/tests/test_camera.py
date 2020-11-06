@@ -73,14 +73,12 @@ camera = VirtualCam()
 coords = pd.read_csv(DIR/"tests"/"coordinates.csv")
 camera.calibrate(coords)
 coords = camera.get_headpose(convert=False, average=False, n=5, resolution=.8)
-all(coords.frame == "world")
 
 for cam in np.unique(coords["cam"]):  # convert for each cam ...
     for angle in ["azi", "ele"]:  # ... and each angle
         print(cam, angle)
         reg = camera.calibration[np.logical_and(camera.calibration["cam"] == cam, camera.calibration["angle"] == angle)]
-
+        a, b = reg["a"].values[0], reg["b"].values[0]
         coords.loc[coords["cam"] == cam, angle] = \
-            ((coords[coords["cam"] == cam][angle] - reg["a"].values)
-                / reg["b"].values)
+            (coords[coords["cam"] == cam][angle] - a) / b
         coords.insert(3, "frame", "world")

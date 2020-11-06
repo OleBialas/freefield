@@ -96,8 +96,8 @@ class Cameras:
             cam_coords = coords[coords["cam"] == cam]
             # find regression coefficients for azimuth and elevation
             for i, angle in enumerate(["ele", "azi"]):
-                y = cam_coords[angle+"_cam"].values.astype(float)
-                x = cam_coords[angle+"_world"].values.astype(float)
+                x = cam_coords[angle+"_cam"].values.astype(float)
+                y = cam_coords[angle+"_world"].values.astype(float)
                 b, a, r, _, _ = stats.linregress(x, y)
                 if np.abs(r) < 0.85:
                     logging.warning(f"Correlation for camera {cam}",

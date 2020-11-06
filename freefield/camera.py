@@ -86,6 +86,7 @@ class Cameras:
                 coords.loc[coords["cam"] == cam, angle] = \
                     a + b * coords[coords["cam"] == cam][angle]
         coords.frame = "world"  # coords are now in "world" frame
+        return coords
 
     def calibrate(self, coords, plot=True):
         calibration = pd.DataFrame(columns=["a", "b", "cam", "angle"])

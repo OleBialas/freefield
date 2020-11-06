@@ -1,3 +1,4 @@
+"""
 from freefield import devices
 
 
@@ -12,3 +13,4 @@ def test_devices():
         assert len(data) == n_samples
 
     assert _devices.write("tag", 1, procs=['RX81', 'RX82']) == 1
+"""

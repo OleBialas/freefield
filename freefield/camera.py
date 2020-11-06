@@ -85,7 +85,7 @@ class Cameras:
                 a, b = reg["a"].values[0], reg["b"].values[0]
                 coords.loc[coords["cam"] == cam, angle] = \
                     a + b * coords[coords["cam"] == cam][angle]
-        coords.insert(3, "frame", "world")
+        coords.frame = "world"  # coords are now in "world" frame
 
     def calibrate(self, coords, plot=True):
         calibration = pd.DataFrame(columns=["a", "b", "cam", "angle"])

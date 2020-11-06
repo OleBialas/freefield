@@ -42,6 +42,12 @@ def test_calibration():
     cam = VirtualCam()
     coords = pd.read_csv(DIR/"tests"/"coordinates.csv")
     cam.calibrate(coords)
+    pose = cam.get_headpose(convert=False, average=False, n=5, resolution=.8)
+    assert len(pose) == 5
+    assert all(coords.frame == "camera")
+    pose = cam.get_headpose(convert=True, average=True, n=5, resolution=.8)
+    assert len(pose) == 1
+    assert all(coords.frame == "world")
 
 
 def test_headpose():
@@ -61,3 +67,20 @@ def test_headpose():
             else:
                 assert azi == row["azimuth"].values[0]
                 assert ele == row["elevation"].values[0]
+
+
+camera = VirtualCam()
+coords = pd.read_csv(DIR/"tests"/"coordinates.csv")
+camera.calibrate(coords)
+coords = camera.get_headpose(convert=False, average=False, n=5, resolution=.8)
+all(coords.frame == "world")
+
+for cam in np.unique(coords["cam"]):  # convert for each cam ...
+    for angle in ["azi", "ele"]:  # ... and each angle
+        print(cam, angle)
+        reg = camera.calibration[np.logical_and(camera.calibration["cam"] == cam, camera.calibration["angle"] == angle)]
+
+        coords.loc[coords["cam"] == cam, angle] = \
+            ((coords[coords["cam"] == cam][angle] - reg["a"].values)
+                / reg["b"].values)
+        coords.insert(3, "frame", "world")

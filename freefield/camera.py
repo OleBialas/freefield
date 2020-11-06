@@ -53,7 +53,7 @@ class Cameras:
                 ele, azi = self.model.pose_from_image(image)
                 pose = pose.append(
                         pd.DataFrame(
-                            [[ele, azi, i_cam, "world"]],
+                            [[ele, azi, i_cam, "camera"]],
                             columns=["ele", "azi", "cam", "frame"]))
         if len(pose.dropna()) == 0:
             return pose  # if all are NaN, no face was found in any image
@@ -84,7 +84,7 @@ class Cameras:
                 coords.loc[coords["cam"] == cam, angle] = \
                     ((coords[coords["cam"] == cam][angle] - reg["a"].values)
                         / reg["b"].values)
-                coords.insert(3, "frame", "world")
+        coords.frame = "world"  # now they are world coordinates
 
     def calibrate(self, coords, plot=True):
         calibration = pd.DataFrame(columns=["a", "b", "cam", "angle"])

@@ -42,7 +42,7 @@ def test_calibration():
     cam.calibrate(coords)
     pose = cam.get_headpose(convert=False, average=False, n=5, resolution=.8)
     assert len(pose) == 5
-    assert all(coords.frame == "camera")
+    assert all(pose.frame == "camera")
     pose = cam.get_headpose(convert=True, average=True, n=5, resolution=.8)
     assert len(pose) == 1
-    assert all(coords.frame == "world")
+    assert all(pose.frame == "world")

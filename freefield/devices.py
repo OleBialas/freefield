@@ -152,7 +152,7 @@ class Devices(object):
         if not set(procnames).issubset(self._procs.keys()):
             raise ValueError('Can not find some of the specified processors!')
         for t, v, proc in zip(tag, value, procs):
-            for p in procs:
+            for p in proc:
                 if isinstance(v, (list, np.ndarray)):  # TODO: fix this
                     flag = self._procs[p]._oleobj_.InvokeTypes(
                         15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)),

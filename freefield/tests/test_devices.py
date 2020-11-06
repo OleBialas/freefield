@@ -1,5 +1,5 @@
 from freefield import Devices
-
+import numpy as np
 
 def test_devices():
     _devices = Devices()
@@ -20,14 +20,11 @@ tag = ["tag1", "tag2", "tag3"]
 procs = [['RX81', 'RX82'], ['RP2'], ['RX81']]
 value = [1, 2, 3]
 
-tag = "tag1"
-procs = ['RX81', 'RX82']
-value = 1
 if isinstance(tag, list):
     if not len(tag) == len(value) == len(procs):
         raise ValueError("tag, value and procs must be same length!")
     else:
-        procnames = [proc for proc in (sublist for sublist in procs)]
+        procnames = [item for sublist in procs for item in sublist]
 else:
     tag, value = [tag], [value]
     if isinstance(procs, str):
@@ -35,8 +32,15 @@ else:
     else:
         procnames = procs
 
-print(names)
-
 # Check if the processors you want to write to are in _procs
-if not set(names).issubset(_devices._procs.keys()):
+if not set(procnames).issubset(_devices._procs.keys()):
     raise ValueError('Can not find some of the specified processors!')
+
+for t, v, proc in zip(tag, value, procs):
+    for p in proc:
+        if isinstance(v, (list, np.ndarray)):
+            flag = _devices._procs[p]._oleobj_.InvokeTypes(
+                15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)),
+                t, 0, v)
+        else:
+            flag = _devices._procs[p].SetTagVal(t, v)

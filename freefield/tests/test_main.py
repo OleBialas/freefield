@@ -1,3 +1,4 @@
+"""
 from freefield import main
 import multiprocessing
 import time
@@ -14,3 +15,4 @@ def test_wait():
     p.terminate()
     p.join()
     pass
+"""

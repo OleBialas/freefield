@@ -26,6 +26,7 @@ setup(name='freefield',
       package_data={'freefield': ['data/tables/*', 'data/sounds/*',
                                   'data/rcx/*', 'data/models/*',
                                   'data/models/pose_model/*',
-                                  'data/models/pose_model/variables/*']},
+                                  'data/models/pose_model/variables/*',
+                                  'tests/*', 'tests/images/*']},
       include_package_data=True,
       zip_safe=False)

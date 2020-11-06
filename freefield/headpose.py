@@ -115,22 +115,6 @@ class PoseEstimator:
         self.detection_result = [faceboxes, confidences]
         return confidences, faceboxes
 
-    def draw_all_result(self, image):
-        """Draw the detection result on image"""
-        for facebox, conf in self.detection_result:
-            cv2.rectangle(image, (facebox[0], facebox[1]),
-                          (facebox[2], facebox[3]), (0, 255, 0))
-            label = "face: %.4f" % conf
-            label_size, base_line = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-
-            cv2.rectangle(image, (facebox[0], facebox[1] - label_size[1]),
-                          (facebox[0] + label_size[0],
-                           facebox[1] + base_line),
-                          (0, 255, 0), cv2.FILLED)
-            cv2.putText(image, label, (facebox[0], facebox[1]),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0))
-
     @staticmethod
     def draw_box(image, boxes, box_color=(255, 255, 255)):
         """Draw square boxes on image"""
@@ -213,43 +197,3 @@ class PoseEstimator:
         marks = np.array(predictions['output']).flatten()[:136]
         marks = np.reshape(marks, (-1, 2))
         return marks
-
-    @staticmethod
-    def draw_marks(image, marks, color=(255, 255, 255)):
-        """Draw mark points on image"""
-        for mark in marks:
-            cv2.circle(image, (int(mark[0]), int(
-                mark[1])), 1, color, -1, cv2.LINE_AA)
-
-
-def draw_annotation_box(img, rotation_vector, translation_vector,
-                        camera_matrix, color=(255, 255, 0), line_width=2):
-    """Draw a 3D box as annotation of pose"""
-    point_3d = []
-    dist_coeffs = np.zeros((4, 1))
-    rear_size = 1
-    rear_depth = 0
-    point_3d.append((-rear_size, -rear_size, rear_depth))
-    point_3d.append((-rear_size, rear_size, rear_depth))
-    point_3d.append((rear_size, rear_size, rear_depth))
-    point_3d.append((rear_size, -rear_size, rear_depth))
-    point_3d.append((-rear_size, -rear_size, rear_depth))
-
-    front_size = img.shape[1]
-    front_depth = front_size*2
-    point_3d.append((-front_size, -front_size, front_depth))
-    point_3d.append((-front_size, front_size, front_depth))
-    point_3d.append((front_size, front_size, front_depth))
-    point_3d.append((front_size, -front_size, front_depth))
-    point_3d.append((-front_size, -front_size, front_depth))
-    point_3d = np.array(point_3d, dtype=np.float).reshape(-1, 3)
-
-    # Map to 2d img points
-    (point_2d, _) = cv2.projectPoints(point_3d,
-                                      rotation_vector,
-                                      translation_vector,
-                                      camera_matrix,
-                                      dist_coeffs)
-    point_2d = np.int32(point_2d.reshape(-1, 2))
-    k = (point_2d[5] + point_2d[8])//2
-    return(point_2d[2], k)

@@ -341,6 +341,11 @@ class _COM():
         else:
             return 1
 
+    def GetTagVal(self, tag):
+        if not isinstance(tag, str):
+            return 0
+        return 1
+
     def ReadTagV(self, tag, nstart, n_samples):
         if not isinstance(tag, str):
             return 0

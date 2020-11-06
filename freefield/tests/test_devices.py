@@ -1,5 +1,4 @@
 from freefield import devices
-devices._win = False
 
 
 def test_devices():

@@ -151,7 +151,7 @@ class Devices(object):
             raise ValueError('Can not find some of the specified processors!')
         for t, v, proc in zip(tag, value, procs):
             for p in procs:
-                if isinstance(value, (list, np.ndarray)):  # TODO: fix this
+                if isinstance(v, (list, np.ndarray)):  # TODO: fix this
                     flag = self._procs[p]._oleobj_.InvokeTypes(
                         15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)),
                         t, 0, v)

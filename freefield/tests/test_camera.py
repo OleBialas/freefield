@@ -45,6 +45,7 @@ def test_calibration():
     pose = cam.get_headpose(convert=False, average=False, n=5, resolution=.8)
     assert len(pose) == 5 and isinstance(pose, pd.core.frame.DataFrame)
     assert all(pose.frame == "camera")
+    pose = cam.get_headpose(convert=True, average=False, n=1, resolution=.8)
+    assert all(pose.frame == "world")
     pose = cam.get_headpose(convert=True, average=True, n=5, resolution=.8)
     assert len(pose) == 2 and isinstance(pose, tuple)
-    assert all(pose.frame == "world")

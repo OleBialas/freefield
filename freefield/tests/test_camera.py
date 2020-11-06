@@ -80,5 +80,5 @@ for cam in np.unique(coords["cam"]):  # convert for each cam ...
         reg = camera.calibration[np.logical_and(camera.calibration["cam"] == cam, camera.calibration["angle"] == angle)]
         a, b = reg["a"].values[0], reg["b"].values[0]
         coords.loc[coords["cam"] == cam, angle] = \
-            (coords[coords["cam"] == cam][angle] - a) / b
+            a + b * coords[coords["cam"] == cam][angle]
         coords.insert(3, "frame", "world")

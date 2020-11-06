@@ -78,13 +78,14 @@ class Cameras:
     def convert_coordinates(self, coords):
         for cam in np.unique(coords["cam"]):  # convert for each cam ...
             for angle in ["azi", "ele"]:  # ... and each angle
-                reg = self.calibration[(self.calibration["cam"] == cam)
-                                       (self.calibration["angle"] == angle)]
-
+                # get the regression coefficients a & b
+                reg = self.calibration[np.logical_and(
+                    self.calibration["cam"] == cam,
+                    self.calibration["angle"] == angle)]
+                a, b = reg["a"].values[0], reg["b"].values[0]
                 coords.loc[coords["cam"] == cam, angle] = \
-                    ((coords[coords["cam"] == cam][angle] - reg["a"].values)
-                        / reg["b"].values)
-        coords.frame = "world"  # now they are world coordinates
+                    a + b * coords[coords["cam"] == cam][angle]
+        coords.insert(3, "frame", "world")
 
     def calibrate(self, coords, plot=True):
         calibration = pd.DataFrame(columns=["a", "b", "cam", "angle"])
@@ -109,8 +110,8 @@ class Cameras:
                     ax[i].plot(x, x*b+a, linestyle="--", label=cam)
                     ax[i].set_title(angle)
                     ax[i].legend()
-                    ax[i].set_xlabel("world coordinates in degree")
-                    ax[i].set_ylabel("camera coordinates in degree")
+                    ax[i].set_xlabel("camera coordinates in degree")
+                    ax[i].set_ylabel("world coordinates in degree")
 
         self.calibration = calibration
         if plot:

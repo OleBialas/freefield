@@ -24,19 +24,19 @@ if isinstance(tag, list):
     if not len(tag) == len(value) == len(procs):
         raise ValueError("tag, value and procs must be same length!")
     else:
-        procnames = [item for sublist in procs for item in sublist]
+        procs = [item for sublist in procs for item in sublist]
 else:
     tag, value = [tag], [value]
     if isinstance(procs, str):
-        procnames = [procs]
+        procs = [procs]
     else:
-        procnames = procs
+        procs = procs
 
 # Check if the processors you want to write to are in _procs
-if not set(procnames).issubset(_devices._procs.keys()):
+if not set(procs).issubset(_devices._procs.keys()):
     raise ValueError('Can not find some of the specified processors!')
 
-for t, v, proc in zip(tag, value, procs):
+for t, v, p in zip(tag, value, procs):
     for p in proc:
         if isinstance(v, (list, np.ndarray)):
             flag = _devices._procs[p]._oleobj_.InvokeTypes(

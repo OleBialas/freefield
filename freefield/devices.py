@@ -142,27 +142,25 @@ class Devices(object):
             if not len(tag) == len(value) == len(procs):
                 raise ValueError("tag, value and procs must be same length!")
             else:
-                procnames = [item for sublist in procs for item in sublist]
+                procs = [item for sublist in procs for item in sublist]
         else:
             tag, value = [tag], [value]
             if isinstance(procs, str):
-                procnames = [procs]
-            else:
-                procnames = procs
-        if not set(procnames).issubset(self._procs.keys()):
+                procs = [procs]
+        # Check if the procs are actually there
+        if not set(procs).issubset(self._procs.keys()):
             raise ValueError('Can not find some of the specified processors!')
-        for t, v, proc in zip(tag, value, procs):
-            for p in proc:
-                if isinstance(v, (list, np.ndarray)):  # TODO: fix this
-                    flag = self._procs[p]._oleobj_.InvokeTypes(
-                        15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)),
-                        t, 0, v)
-                    logging.info(f'Set {tag} on {p}.')
-                else:
-                    flag = self._procs[p].SetTagVal(t, v)
-                    logging.info(f'Set {tag} to {value} on {p}.')
-            if flag == 0:
-                logging.warning(f'Unable to set tag {tag} on {p}')
+        for t, v, p in zip(tag, value, procs):
+            if isinstance(v, (list, np.ndarray)):  # TODO: fix this
+                flag = self._procs[p]._oleobj_.InvokeTypes(
+                    15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)),
+                    t, 0, v)
+                logging.info(f'Set {tag} on {p}.')
+            else:
+                flag = self._procs[p].SetTagVal(t, v)
+                logging.info(f'Set {tag} to {value} on {p}.')
+        if flag == 0:
+            logging.warning(f'Unable to set tag {tag} on {p}')
         return flag
 
     def read(self, tag, n_samples=1, proc='RX8'):

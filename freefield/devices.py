@@ -161,7 +161,8 @@ class Devices(object):
                     logging.info(f'Set {tag} to {value} on {p}.')
             if flag == 0:
                 logging.warning(f'Unable to set tag {tag} on {p}')
-
+        return flag
+        
     def read(self, tag, n_samples=1, proc='RX8'):
         """
         Read data from device.

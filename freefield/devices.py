@@ -146,7 +146,7 @@ class Devices(object):
             if isinstance(procs, str):
                 procs = [[procs]]
         # Check if the processors you want to write to are in _procs
-        names = [item for sublist in procs for item in sublist]
+        names = [proc for proc in procs]
         if not set(names).issubset(self._procs.keys()):
             raise ValueError('Can not find some of the specified processors!')
         for t, v, proc in zip(tag, value, procs):

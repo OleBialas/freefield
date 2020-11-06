@@ -141,13 +141,15 @@ class Devices(object):
         if isinstance(tag, list):
             if not len(tag) == len(value) == len(procs):
                 raise ValueError("tag, value and procs must be same length!")
+            else:
+                procnames = [item for sublist in procs for item in sublist]
         else:
             tag, value = [tag], [value]
             if isinstance(procs, str):
-                procs = [[procs]]
-        # Check if the processors you want to write to are in _procs
-        names = [proc for proc in procs]
-        if not set(names).issubset(self._procs.keys()):
+                procnames = [procs]
+            else:
+                procnames = procs
+        if not set(procnames).issubset(self._procs.keys()):
             raise ValueError('Can not find some of the specified processors!')
         for t, v, proc in zip(tag, value, procs):
             for p in procs:
@@ -162,7 +164,7 @@ class Devices(object):
             if flag == 0:
                 logging.warning(f'Unable to set tag {tag} on {p}')
         return flag
-        
+
     def read(self, tag, n_samples=1, proc='RX8'):
         """
         Read data from device.

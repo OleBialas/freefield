@@ -11,6 +11,7 @@ import pandas as pd
 import datetime
 from freefield import DIR, Devices
 import logging
+
 logging.basicConfig(level=logging.WARNING)
 # default samplerate for generating sounds, filters etc.
 slab.Signal.set_default_samplerate(48828)
@@ -53,21 +54,21 @@ def initialize_setup(setup, default_mode=None, device_list=None,
     # get the correct speaker table and calibration files for the setup
     if setup == 'arc':
         _config = 'arc'
-        freq_calibration_file = DIR/'data'/Path('frequency_calibration_arc.npy')
-        lvl_calibration_file = DIR/'data'/Path('level_calibration_arc.npy')
-        table_file = DIR/'data'/'tables'/Path('speakertable_arc.txt')
+        freq_calibration_file = DIR / 'data' / Path('frequency_calibration_arc.npy')
+        lvl_calibration_file = DIR / 'data' / Path('level_calibration_arc.npy')
+        table_file = DIR / 'data' / 'tables' / Path('speakertable_arc.txt')
     elif setup == 'dome':
         _config = 'dome'
-        freq_calibration_file = DIR/'data'/Path('frequency_calibration_dome.npy')
-        lvl_calibration_file = DIR/'data'/Path('level_calibration_dome.npy')
-        table_file = DIR/'data'/'tables'/Path('speakertable_dome.txt')
+        freq_calibration_file = DIR / 'data' / Path('frequency_calibration_dome.npy')
+        lvl_calibration_file = DIR / 'data' / Path('level_calibration_dome.npy')
+        table_file = DIR / 'data' / 'tables' / Path('speakertable_dome.txt')
     else:
         raise ValueError("Unknown device! Use 'arc' or 'dome'.")
     logging.info(f'Speaker configuration set to {setup}.')
     # lambdas provide default values of 0 if azi or ele are not in the file
     _table = np.loadtxt(fname=table_file, delimiter=',', skiprows=1,
-                                converters={3: lambda s: float(s or 0),
-                                            4: lambda s: float(s or 0)})
+                        converters={3: lambda s: float(s or 0),
+                                    4: lambda s: float(s or 0)})
     idx = np.where(_table == -999.)
     _table[idx[0], idx[1]] = None  # translate -999 to None
     logging.info('Speaker table loaded.')
@@ -83,7 +84,7 @@ def initialize_setup(setup, default_mode=None, device_list=None,
         logging.warning('Setup not level-calibrated...')
 
 
-def wait_to_finish_playing(proc, tag="playback"):
+def wait_to_finish_playing(proc="all", tag="playback"):
     """
     Busy wait until the devices finished playing.
 
@@ -96,7 +97,9 @@ def wait_to_finish_playing(proc, tag="playback"):
         proc (str, list of str): name(s) of the processor(s) to wait for.
         tag (str): name of the tag that signals if something is played
     """
-    if isinstance(proc, str):
+    if proc == "all":
+        proc = list(_devices.procs.keys())
+    elif isinstance(proc, str):
         proc = [proc]
     logging.info(f'Waiting for {tag} on {proc}.')
     while any(_devices.read(tag, n_samples=1, proc=p) for p in proc):
@@ -104,7 +107,7 @@ def wait_to_finish_playing(proc, tag="playback"):
     logging.info('Done waiting.')
 
 
-def get_speaker(index=None, coordinates=None):
+def get_speaker(index: int, coordinates: list) -> list:
     """
     Either return the speaker at given coordinates (azimuth, elevation) or the
     speaker with a specific index number.
@@ -152,7 +155,7 @@ def _convert_tablerow(row):
         bitval = int(bitval)
         bitidx = int(bitidx)
 
-    return speaker, channel, chidx, azimuth, elevation, bitval, bitidx
+    return [speaker, channel, chidx, azimuth, elevation, bitval, bitidx]
 
 
 def get_speakerlist(speakers: list) -> list:
@@ -171,7 +174,7 @@ def get_speakerlist(speakers: list) -> list:
             all(isinstance(x, np.int64) for x in speakers)):
         speaker_list = [get_speaker(index=i) for i in speakers]
     elif (all(isinstance(x, tuple) for x in speakers) or  # list contains coords
-            all(isinstance(x, list) for x in speakers)):
+          all(isinstance(x, list) for x in speakers)):
         speaker_list = [get_speaker(coordinates=c) for c in speakers]
     return speaker_list
 
@@ -228,21 +231,7 @@ def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=False):
             int(speaker)).apply(toplay)
     _devices.write(['chan', 'data'], [channel, toplay.data], [proc, proc])
     # set the other channel to non existant
-    set_variable(variable='chan', value=25, proc=3-proc)
-
-
-def printv(message):
-    """
-    Print a message if _verbose is True and the message is not among the
-    last 5 printed messages
-    """
-    # TODO: set different verbosity levels
-    global _print_list
-    if _verbose and message not in _print_list:
-        print(message)
-        _print_list.append(message)
-        if len(_print_list) > 5:
-            _print_list.remove(_print_list[0])
+    set_variable(variable='chan', value=25, proc=3 - proc)
 
 
 def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
@@ -284,17 +273,16 @@ def check_pose(target=None, var=10):
     if azi is np.nan:
         pass
     else:
-        if np.abs(ele-target[0]) > var:
+        if np.abs(ele - target[0]) > var:
             correct = False
     if ele is np.nan:
         pass
     else:
-        if np.abs(ele-target[1]) > var:
+        if np.abs(ele - target[1]) > var:
             correct = False
     return correct
 
-
-# functions implementing complete procedures:
+    # functions implementing complete procedures:
     def calibrate_camera(self, n_reps=1):
         # azimuth and elevation of a set of points in camera and world coords
         # one list for each camera
@@ -338,7 +326,6 @@ def check_pose(target=None, var=10):
             setup.set_variable(variable="bitmask", value=0, proc="RX8s")
 
 
-
 def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=False):
     """
     Run a basic localization test where the same sound is played from different
@@ -375,7 +362,7 @@ def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=Fa
         trial = {"azi_target": azi, "ele_target": ele}
         # give dictionary or list of variables ?
         set_variable(variable="chan", value=ch, proc="RX8%s" % int(proc_ch))
-        set_variable(variable="chan", value=25, proc="RX8%s" % int(3-proc_ch))
+        set_variable(variable="chan", value=25, proc="RX8%s" % int(3 - proc_ch))
         set_variable(variable="playbuflen", value=len(sound), proc="RX8s")
         set_variable(variable="data", value=sound.data, proc="RX8s")
         if visual is True:
@@ -397,10 +384,10 @@ def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=Fa
                 ele = 0
             if azi is np.nan:
                 azi = 0
-            if np.abs(ele-_fix_ele) < _fix_acc and np.abs(azi-_fix_azi) < _fix_acc:
+            if np.abs(ele - _fix_ele) < _fix_acc and np.abs(azi - _fix_azi) < _fix_acc:
                 head_in_position = 1
             else:
-                print(np.abs(ele-_fix_ele), np.abs(azi-_fix_azi))
+                print(np.abs(ele - _fix_ele), np.abs(azi - _fix_azi))
                 set_variable(variable="data", value=warning, proc="RX8s")
                 set_variable(variable="chan", value=1, proc="RX81")
                 set_variable(variable="chan", value=25, proc="RX82")
@@ -413,7 +400,6 @@ def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=Fa
 
 
 def localization_test_headphones(folder, speakers, n_reps=1, visual=False):
-
     folder = Path(folder)
     if not folder.exists():
         raise ValueError("Folder does not exist!")
@@ -471,7 +457,7 @@ def localization_test_headphones(folder, speakers, n_reps=1, visual=False):
     return response
 
 
-def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
+def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1 / 10,
                       low_cutoff=200, high_cutoff=16000, alpha=1.0, plot=False, test=True, exclude=None):
     """
     Equalize the loudspeaker array in two steps. First: equalize over all
@@ -502,14 +488,14 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10,
     if _freq_calibration_file.exists():
         date = datetime.datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")
         rename_previous = \
-            _location.parent / Path("log/"+_freq_calibration_file.stem + date
+            _location.parent / Path("log/" + _freq_calibration_file.stem + date
                                     + _freq_calibration_file.suffix)
         _freq_calibration_file.rename(rename_previous)
 
     if _lvl_calibration_file.exists():
         date = datetime.datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")
         rename_previous = \
-            _location.parent / Path("log/"+_lvl_calibration_file.stem + date
+            _location.parent / Path("log/" + _lvl_calibration_file.stem + date
                                     + _lvl_calibration_file.suffix)
         _lvl_calibration_file.rename(rename_previous)
     np.save(_lvl_calibration_file, _calibration_lvls)
@@ -595,7 +581,7 @@ def test_equalization(sig, speakers="all", max_diff=5):
     return slab.Sound(rec_raw), slab.Sound(rec_lvl_eq), slab.Sound(rec_freq_eq)
 
 
-def spectral_range(signal, bandwidth=1/5, low_cutoff=50, high_cutoff=20000, thresh=3,
+def spectral_range(signal, bandwidth=1 / 5, low_cutoff=50, high_cutoff=20000, thresh=3,
                    plot=True, log=True):
     """
     Compute the range of differences in power spectrum for all channels in
@@ -621,7 +607,7 @@ def spectral_range(signal, bandwidth=1/5, low_cutoff=50, high_cutoff=20000, thre
     for i in range(fbank.nchannels):  # find max and min for each frequency
         max_level[i] = max(levels[:, i])
         min_level[i] = min(levels[:, i])
-    difference = max_level-min_level
+    difference = max_level - min_level
     if plot is True or isinstance(plot, Axes):
         if isinstance(plot, Axes):
             ax = plot
@@ -635,8 +621,8 @@ def spectral_range(signal, bandwidth=1/5, low_cutoff=50, high_cutoff=20000, thre
             else:
                 ax.plot(center_freqs, y, color="black", linestyle="--")
         for bad in bads:
-            ax.fill_between(center_freqs[bad-1:bad+1], max_level[bad-1:bad+1],
-                            min_level[bad-1:bad+1], color="red", alpha=.6)
+            ax.fill_between(center_freqs[bad - 1:bad + 1], max_level[bad - 1:bad + 1],
+                            min_level[bad - 1:bad + 1], color="red", alpha=.6)
     return difference
 
 
@@ -684,18 +670,18 @@ def play_and_record(speaker_nr, sig, compensate_delay=True,
     else:
         n_delay = 0
     set_variable(variable="playbuflen", value=sig.nsamples, proc="RX8s")
-    set_variable(variable="playbuflen", value=sig.nsamples+n_delay, proc="RP2")
+    set_variable(variable="playbuflen", value=sig.nsamples + n_delay, proc="RP2")
     set_signal_and_speaker(sig, speaker_nr, apply_calibration)
     trigger()  # start playing and wait
     wait_to_finish_playing(proc="all")
     if binaural is False:
         rec = get_variable(variable='data', proc='RP2',
-                           n_samples=sig.nsamples+n_delay)[n_delay:]
+                           n_samples=sig.nsamples + n_delay)[n_delay:]
         rec = slab.Sound(rec)
     if binaural is True:
         recl = get_variable(variable='datal', proc='RP2',
-                            n_samples=sig.nsamples+n_delay)[n_delay:]
+                            n_samples=sig.nsamples + n_delay)[n_delay:]
         recr = get_variable(variable='datar', proc='RP2',
-                            n_samples=sig.nsamples+n_delay)[n_delay:]
+                            n_samples=sig.nsamples + n_delay)[n_delay:]
         rec = slab.Binaural([recl, recr])
     return rec

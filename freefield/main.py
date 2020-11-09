@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.WARNING)
 slab.Signal.set_default_samplerate(48828)
 
 _config = None  # either "dome" or "arc"
-_devices = None
+_devices = Devices()
 _calibration_freqs = None  # filters for frequency equalization
 _calibration_lvls = None  # calibration to equalize levels
 _table = None  # numbers and coordinates of all loudspeakers
@@ -44,7 +44,6 @@ def initialize_setup(setup, default_mode=None, device_list=None,
     # TODO: put level and frequency equalization in one common file
     global _config, _calibration_freqs, _calibration_lvls, _table, _devices
     # initialize devices
-    _devices = Devices()
     if bool(device_list) == bool(default_mode):
         raise ValueError("You have to specify a device_list OR a default_mode")
     if device_list:
@@ -56,12 +55,12 @@ def initialize_setup(setup, default_mode=None, device_list=None,
         _config = 'arc'
         freq_calibration_file = DIR/'data'/Path('frequency_calibration_arc.npy')
         lvl_calibration_file = DIR/'data'/Path('level_calibration_arc.npy')
-        table_file = DIR/'data'/Path('speakertable_arc.txt')
+        table_file = DIR/'data'/'tables'/Path('speakertable_arc.txt')
     elif setup == 'dome':
         _config = 'dome'
         freq_calibration_file = DIR/'data'/Path('frequency_calibration_dome.npy')
         lvl_calibration_file = DIR/'data'/Path('level_calibration_dome.npy')
-        table_file = DIR/'data'/Path('speakertable_dome.txt')
+        table_file = DIR/'data'/'tables'/Path('speakertable_dome.txt')
     else:
         raise ValueError("Unknown device! Use 'arc' or 'dome'.")
     logging.info(f'Speaker configuration set to {setup}.')
@@ -84,7 +83,7 @@ def initialize_setup(setup, default_mode=None, device_list=None,
         logging.warning('Setup not level-calibrated...')
 
 
-def wait_to_finish_playing(proc=['RX81', 'RX82'], tagname="playback"):
+def wait_to_finish_playing(proc, tag="playback"):
     """
     Busy wait until the devices finished playing.
 
@@ -99,8 +98,8 @@ def wait_to_finish_playing(proc=['RX81', 'RX82'], tagname="playback"):
     """
     if isinstance(proc, str):
         proc = [proc]
-    logging.info(f'Waiting for {tagname} on {proc}.')
-    while any(_devices.gettag(tagname, n_samples=1, proc=p) for p in proc):
+    logging.info(f'Waiting for {tag} on {proc}.')
+    while any(_devices.read(tag, n_samples=1, proc=p) for p in proc):
         time.sleep(0.01)
     logging.info('Done waiting.')
 

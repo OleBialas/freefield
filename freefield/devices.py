@@ -110,7 +110,7 @@ class Devices(object):
         logging.info(f'set mode to {mode}')
         self.initialize_devices(device_list, True, "GB")
 
-    def write(self, tag, value, procs=['RX81', 'RX82']):
+    def write(self, tag, value, procs):
         """
         Write data to device(s).
 
@@ -231,7 +231,7 @@ class Devices(object):
     def _initialize_proc(model, circuit, connection, index):
         if _win:
             try:
-                rp = win32com.client.Dispatch('RPco.X')
+                rp = win32com.client
             except win32com.client.pythoncom.com_error as err:
                 raise ValueError(err)
         else:
@@ -277,18 +277,20 @@ class Devices(object):
         return zb
 
 
-class _COM():
+def ConnectRP2(connection, index):
+    if connection not in ["GB", "USB"]:
+        return 0
+    if not isinstance(index, int):
+        return 0
+    else:
+        return 1
+
+
+class _COM:
     """
     Simulate a TDT processor for testing
     """
-    def ConnectRP2(self, connection, index):
-        if connection not in ["GB", "USB"]:
-            return 0
-        if not isinstance(index, int):
-            return 0
-        else:
-            return 1
-
+    @staticmethod
     def ConnectRX8(self, connection, index):
         if connection not in ["GB", "USB"]:
             return 0
@@ -297,6 +299,7 @@ class _COM():
         else:
             return 1
 
+    @staticmethod
     def ConnectRM1(self, connection, index):
         if connection not in ["GB", "USB"]:
             return 0
@@ -305,6 +308,7 @@ class _COM():
         else:
             return 1
 
+    @staticmethod
     def ConnectRX6(self, connection, index):
         if connection not in ["GB", "USB"]:
             return 0
@@ -313,27 +317,33 @@ class _COM():
         else:
             return 1
 
+    @staticmethod
     def ClearCOF(self):
         return 1
 
+    @staticmethod
     def LoadCOF(self, circuit):
         if not os.path.isfile(circuit):
             return 0
         else:
             return 1
 
+    @staticmethod
     def Run(self):
         return 1
 
+    @staticmethod
     def ConnectZBUS(self, connection):
         if connection not in ["GB", "USB"]:
             return 0
         else:
             return 1
 
+    @staticmethod
     def Halt(self):
         return 1
 
+    @staticmethod
     def SetTagVal(self, tag, value):
         if not isinstance(tag, str):
             return 0
@@ -342,11 +352,13 @@ class _COM():
         else:
             return 1
 
+    @staticmethod
     def GetTagVal(self, tag):
         if not isinstance(tag, str):
             return 0
         return 1
 
+    @staticmethod
     def ReadTagV(self, tag, nstart, n_samples):
         if not isinstance(tag, str):
             return 0

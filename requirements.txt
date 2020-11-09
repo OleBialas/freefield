@@ -1,4 +1,8 @@
-slab
-opencv-python
 tensorflow
+opencv-python
 numpy
+setuptools
+pandas
+matplotlib
+pillow
+scipy

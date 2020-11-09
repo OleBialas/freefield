@@ -231,50 +231,50 @@ class Devices(object):
     def _initialize_proc(model, circuit, connection, index):
         if _win:
             try:
-                RP = win32com.client.Dispatch('RPco.X')
+                rp = win32com.client.Dispatch('RPco.X')
             except win32com.client.pythoncom.com_error as err:
                 raise ValueError(err)
         else:
-            RP = _COM()
+            rp = _COM()
         logging.info(f'Connecting to {model} processor ...')
         connected = 0
         if model.upper() == 'RP2':
-            connected = RP.ConnectRP2(connection, index)
+            connected = rp.ConnectRP2(connection, index)
         elif model.upper() == 'RX8':
-            connected = RP.ConnectRX8(connection, index)
+            connected = rp.ConnectRX8(connection, index)
         elif model.upper() == 'RM1':
-            connected = RP.ConnectRX8(connection, index)
+            connected = rp.ConnectRX8(connection, index)
         elif model.upper() == 'RX6':
-            connected = RP.ConnectRX8(connection, index)
+            connected = rp.ConnectRX8(connection, index)
         if not connected:
             logging.warning(f'Unable to connect to {model} processor!')
         else:  # connecting was successfull, load circuit
-            if not RP.ClearCOF():
+            if not rp.ClearCOF():
                 logging.warning('clearing control object file failed')
-            if not RP.LoadCOF(circuit):
+            if not rp.LoadCOF(circuit):
                 logging.warning(f'could not load {circuit}.')
             else:
                 logging.info(f'{circuit} loaded!')
-            if not RP.Run():
+            if not rp.Run():
                 logging.warning(f'Failed to run {model} processor')
             else:
                 logging.info(f'{model} processor is running...')
-            return RP
+            return rp
 
     @staticmethod
     def _initialze_zbus(connection):
         if _win:
             try:
-                ZB = win32com.client.Dispatch('ZBUS.x')
+                zb = win32com.client.Dispatch('ZBUS.x')
             except win32com.client.pythoncom.com_error as err:
                 logging.warning(err)
         else:
-            ZB = _COM()
-        if ZB.ConnectZBUS(connection):
+            zb = _COM()
+        if zb.ConnectZBUS(connection):
             logging.info('Connected to ZBUS.')
         else:
             logging.warning('Failed to connect to ZBUS.')
-        return ZB
+        return zb
 
 
 class _COM():

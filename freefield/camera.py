@@ -123,12 +123,12 @@ class FlirCams(Cameras):
     def __init__(self):
         super().__init__()
         self.system = PySpin.System.GetInstance()
-        self.cams = self._system.GetCameras()
+        self.cams = self.system.GetCameras()
         self.ncams = self.cams.GetSize()
         self.imsize = self.acquire_images(n=1).shape[0:2]
         if self.ncams == 0:    # Finish if there are no cameras
             self.cams.Clear()  # Clear camera list before releasing system
-            self._system.ReleaseInstance()  # Release system instance
+            self.system.ReleaseInstance()  # Release system instance
             logging.warning('No camera found!')
         else:
             for cam in self.cams:
@@ -137,7 +137,7 @@ class FlirCams(Cameras):
 
     def acquire_images(self, n=1):
         if hasattr(self, "imsize"):
-            image_data = np.zeros((self.imsize)+(n, self.ncams), dtype="uint8")
+            image_data = np.zeros(self.imsize+(n, self.ncams), dtype="uint8")
         else:
             image_data = None
         for cam in self.cams:  # start the cameras
@@ -207,7 +207,7 @@ class WebCams(Cameras):
             retrieve the latest one
         """
         if hasattr(self, "imsize"):
-            image_data = np.zeros((self.imsize)+(n, self.ncams), dtype="uint8")
+            image_data = np.zeros(self.imsize+(n, self.ncams), dtype="uint8")
         else:
             image_data = None
         for i_image in range(n):

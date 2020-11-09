@@ -277,21 +277,13 @@ class Devices(object):
         return zb
 
 
-def ConnectRP2(connection, index):
-    if connection not in ["GB", "USB"]:
-        return 0
-    if not isinstance(index, int):
-        return 0
-    else:
-        return 1
-
-
 class _COM:
     """
-    Simulate a TDT processor for testing
+    Working with TDT processors is only possible on windows machines. This dummy class
+    simulates the output of a processor to test code on other operating systems
     """
     @staticmethod
-    def ConnectRX8(self, connection, index):
+    def ConnectRX8(connection, index):
         if connection not in ["GB", "USB"]:
             return 0
         if not isinstance(index, int):
@@ -300,7 +292,7 @@ class _COM:
             return 1
 
     @staticmethod
-    def ConnectRM1(self, connection, index):
+    def ConnectRP2(connection, index):
         if connection not in ["GB", "USB"]:
             return 0
         if not isinstance(index, int):
@@ -309,7 +301,7 @@ class _COM:
             return 1
 
     @staticmethod
-    def ConnectRX6(self, connection, index):
+    def ConnectRM1(connection, index):
         if connection not in ["GB", "USB"]:
             return 0
         if not isinstance(index, int):
@@ -318,33 +310,42 @@ class _COM:
             return 1
 
     @staticmethod
-    def ClearCOF(self):
+    def ConnectRX6(connection, index):
+        if connection not in ["GB", "USB"]:
+            return 0
+        if not isinstance(index, int):
+            return 0
+        else:
+            return 1
+
+    @staticmethod
+    def ClearCOF():
         return 1
 
     @staticmethod
-    def LoadCOF(self, circuit):
+    def LoadCOF(circuit):
         if not os.path.isfile(circuit):
             return 0
         else:
             return 1
 
     @staticmethod
-    def Run(self):
+    def Run():
         return 1
 
     @staticmethod
-    def ConnectZBUS(self, connection):
+    def ConnectZBUS(connection):
         if connection not in ["GB", "USB"]:
             return 0
         else:
             return 1
 
     @staticmethod
-    def Halt(self):
+    def Halt():
         return 1
 
     @staticmethod
-    def SetTagVal(self, tag, value):
+    def SetTagVal(tag, value):
         if not isinstance(tag, str):
             return 0
         if not isinstance(value, (int, float)):
@@ -353,18 +354,18 @@ class _COM:
             return 1
 
     @staticmethod
-    def GetTagVal(self, tag):
+    def GetTagVal(tag):
         if not isinstance(tag, str):
             return 0
         return 1
 
     @staticmethod
-    def ReadTagV(self, tag, nstart, n_samples):
+    def ReadTagV(tag, n_start, n_samples):
         if not isinstance(tag, str):
             return 0
-        if not isinstance(nstart, int):
+        if not isinstance(n_start, int):
             return 0
-        if not isinstance(nstart, int):
+        if not isinstance(n_start, int):
             return 0
         if n_samples == 1:
             return 1

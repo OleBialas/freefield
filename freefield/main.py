@@ -127,7 +127,7 @@ def get_speaker(index_number: Union[int, bool] = None, coordinates: Union[list, 
         int: index of the device the LED is attached to (1 or 2)
     """
     row = pd.DataFrame()
-    if bool(index_number) == bool(coordinates):
+    if (index_number is None and coordinates is None) or (index_number is not None and coordinates is not None):
         raise ValueError("You have to specify a the index OR coordinates of the speaker!")
     if index_number:
         row = _table.loc[(_table.index_number == index_number)]

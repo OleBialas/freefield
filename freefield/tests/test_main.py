@@ -22,6 +22,13 @@ def test_get_speaker():
         speaker = main.get_speaker(coordinates=[azi, ele])
         assert speaker.azi.iloc[0] == azi
         assert speaker.ele.iloc[0] == ele
+    # get lists of speakers:
+    speaker_list = [4, 16, 32, 45]
+    speakers = main.get_speaker_list(speaker_list)
+    assert len(speakers) == len(speaker_list)
+    speaker_list = [(-52.5, 25), (-35, -12.5), (0, -12.5)]
+    speakers = main.get_speaker_list(speaker_list)
+    assert len(speakers) == len(speaker_list)
 
 
 def test_shift_setup():

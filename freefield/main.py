@@ -142,7 +142,7 @@ def get_speaker(index_number: Union[int, bool] = None, coordinates: Union[list, 
     return row
 
 
-def get_speaker_list(speakers: list) -> pd.DataFrame:
+def get_speaker_list(speaker_list: list) -> pd.DataFrame:
     """
     Specify a list of either indices or coordinates and call get_speaker()
     for each element of the list.
@@ -154,20 +154,20 @@ def get_speaker_list(speakers: list) -> pd.DataFrame:
         list of lists: rows from _table corresponding to the list.
             each sub list contains all the variable returned by get_speaker()
     """
-    speaker_list = pd.DataFrame()
-    if (all(isinstance(x, int) for x in speakers) or  # list contains indices
-            all(isinstance(x, np.int64) for x in speakers)):
-        speaker_list = [get_speaker(index_number=i) for i in speakers]
-        speaker_list = [df.set_index('index') for df in speaker_list]
-        speaker_list = pd.concat(speaker_list)
-    elif (all(isinstance(x, tuple) for x in speakers) or  # list contains coords
-          all(isinstance(x, list) for x in speakers)):
-        speaker_list = [get_speaker(coordinates=i) for i in speakers]
-        speaker_list = [df.set_index('index') for df in speaker_list]
-        speaker_list = pd.concat(speaker_list)
+    speakers = pd.DataFrame()
+    if (all(isinstance(x, int) for x in speaker_list) or  # list contains indices
+            all(isinstance(x, np.int64) for x in speaker_list)):
+        speakers = [get_speaker(index_number=i) for i in speaker_list]
+        speakers = [df.set_index('index') for df in speakers]
+        speakers = pd.concat(speakers)
+    elif (all(isinstance(x, tuple) for x in speaker_list) or  # list contains coords
+          all(isinstance(x, list) for x in speaker_list)):
+        speakers = [get_speaker(coordinates=i) for i in speaker_list]
+        speakers = [df.set_index('index') for df in speakers]
+        speakers = pd.concat(speakers)
     if len(speaker_list) == 0:
         logging.warning("No speakers found that match the criteria!")
-    return speaker_list
+    return speakers
 
 
 def all_leds() -> pd.DataFrame:

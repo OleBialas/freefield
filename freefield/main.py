@@ -4,6 +4,7 @@ import glob
 from copy import deepcopy
 import numpy as np
 import slab
+from typing import Union
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from freefield import camera
@@ -20,15 +21,15 @@ _config = None  # either "dome" or "arc"
 _devices = Devices()
 _calibration_freqs = None  # filters for frequency equalization
 _calibration_lvls = None  # calibration to equalize levels
-_table = None  # numbers and coordinates of all loudspeakers
+_table = pd.DataFrame()  # numbers and coordinates of all loudspeakers
 _rec_tresh = 65  # treshold in dB above which recordings are not rejected
 _fix_ele = 0  # fixation points' elevation
 _fix_azi = 0  # fixation points' azimuth
 _fix_acc = 10  # accuracy for determining if subject looks at fixation point
 
 
-def initialize_setup(setup, default_mode=None, device_list=None,
-                     zbus=True, connection="GB"):
+def initialize_setup(setup: str, default_mode: Union[str, bool] = None, device_list: Union[list, bool] = None,
+                     zbus: bool = True, connection: str = "GB") -> None:
     """
     Initialize the devices and load table and calibration for setup.
 
@@ -39,7 +40,11 @@ def initialize_setup(setup, default_mode=None, device_list=None,
     for most of the other functions to work.
 
     Args:
-        setup (str): 'dome' or 'arc'
+        setup: determines which files to load, can be 'dome' or 'arc'
+        default_mode: initialize the setup using one of the defaults, see devices.initialize_default
+        device_list: if not using a default, specify the devices in a list, see devices.initialize_devices
+        zbus: whether or not to initialize the zbus interface
+        connection: type of connection to devices, can be "GB" (optical) or "USB"
     """
 
     # TODO: put level and frequency equalization in one common file
@@ -47,9 +52,9 @@ def initialize_setup(setup, default_mode=None, device_list=None,
     # initialize devices
     if bool(device_list) == bool(default_mode):
         raise ValueError("You have to specify a device_list OR a default_mode")
-    if device_list:
+    if device_list is not None:
         _devices.initialize_devices(device_list, zbus, connection)
-    elif default_mode:
+    elif default_mode is not None:
         _devices.initialize_default(default_mode)
     # get the correct speaker table and calibration files for the setup
     if setup == 'arc':
@@ -66,11 +71,7 @@ def initialize_setup(setup, default_mode=None, device_list=None,
         raise ValueError("Unknown device! Use 'arc' or 'dome'.")
     logging.info(f'Speaker configuration set to {setup}.')
     # lambdas provide default values of 0 if azi or ele are not in the file
-    _table = np.loadtxt(fname=table_file, delimiter=',', skiprows=1,
-                        converters={3: lambda s: float(s or 0),
-                                    4: lambda s: float(s or 0)})
-    idx = np.where(_table == -999.)
-    _table[idx[0], idx[1]] = None  # translate -999 to None
+    _table = pd.read_csv(table_file)
     logging.info('Speaker table loaded.')
     if freq_calibration_file.exists():
         _calibration_freqs = slab.Filter.load(freq_calibration_file)
@@ -84,7 +85,7 @@ def initialize_setup(setup, default_mode=None, device_list=None,
         logging.warning('Setup not level-calibrated...')
 
 
-def wait_to_finish_playing(proc="all", tag="playback"):
+def wait_to_finish_playing(proc: str = "all", tag: str = "playback") -> None:
     """
     Busy wait until the devices finished playing.
 
@@ -107,7 +108,7 @@ def wait_to_finish_playing(proc="all", tag="playback"):
     logging.info('Done waiting.')
 
 
-def get_speaker(index: int, coordinates: list) -> list:
+def get_speaker(index: Union[int, bool] = None, coordinates: Union[list, bool] = None) -> pd.DataFrame:
     """
     Either return the speaker at given coordinates (azimuth, elevation) or the
     speaker with a specific index number.
@@ -125,40 +126,23 @@ def get_speaker(index: int, coordinates: list) -> list:
         int: integer value of the bitmask for the LED at speaker position
         int: index of the device the LED is attached to (1 or 2)
     """
-    # TODO: should the proc be handled with name instead of index nr?
+    row = pd.DataFrame()
     if bool(index) == bool(coordinates):
         raise ValueError("You have to specify a the index OR coordinates of the speaker!")
     if index:
-        row = int(np.argwhere(_table[:, 0] == index))
+        row = _table.loc[(_table['index'] == index)]
     elif coordinates:
         if len(coordinates) != 2:
             raise ValueError("Coordinates must have two elements: azimuth and elevation!")
-        row = int(np.argwhere(np.logical_and(
-            _table[:, 3] == coordinates[0], _table[:, 4] == coordinates[1])))
-    return _convert_tablerow(row)
+        row = _table.loc[(_table["azi"] == coordinates[0]) & (_table['ele'] == coordinates[1])]
+    if len(row) > 1:
+        logging.warning("More or then one row returned!")
+    if len(row) == 0:
+        logging.warning("No entry found that matches the criterion!")
+    return row
 
 
-def _convert_tablerow(row):
-    """
-    Convert the data from table to the correct format for each variable
-    """
-    speaker = int(_table[row, 0])
-    channel = int(_table[row, 1])
-    azimuth = _table[row, 3]
-    elevation = _table[row, 4]
-    chidx = int(_table[row, 2])
-    bitval = _table[row, 5]
-    bitidx = _table[row, 6]
-    if bitval != bitval:
-        bitval, bitidx = 0, 0
-    else:
-        bitval = int(bitval)
-        bitidx = int(bitidx)
-
-    return [speaker, channel, chidx, azimuth, elevation, bitval, bitidx]
-
-
-def get_speakerlist(speakers: list) -> list:
+def get_speaker_list(speakers: list) -> pd.DataFrame:
     """
     Specify a list of either indices or coordinates and call get_speaker()
     for each element of the list.
@@ -170,24 +154,28 @@ def get_speakerlist(speakers: list) -> list:
         list of lists: rows from _table corresponding to the list.
             each sub list contains all the variable returned by get_speaker()
     """
+    speaker_list = pd.DataFrame()
     if (all(isinstance(x, int) for x in speakers) or  # list contains indices
             all(isinstance(x, np.int64) for x in speakers)):
         speaker_list = [get_speaker(index=i) for i in speakers]
+        speaker_list = [df.set_index('index') for df in speaker_list]
+        speaker_list = pd.concat(speaker_list)
     elif (all(isinstance(x, tuple) for x in speakers) or  # list contains coords
           all(isinstance(x, list) for x in speakers)):
-        speaker_list = [get_speaker(coordinates=c) for c in speakers]
+        speaker_list = [get_speaker(coordinates=i) for i in speakers]
+        speaker_list = [df.set_index('index') for df in speaker_list]
+        speaker_list = pd.concat(speaker_list)
+    if len(speaker_list) == 0:
+        logging.warning("No speakers found that match the criteria!")
     return speaker_list
 
 
-def all_leds():
-    '''
-    Temporary hack: return all speakers from the table which have a LED attached
-    '''
-    idx = np.where(_table[:, 5] == _table[:, 5])[0]
-    return get_speakerlist(idx)
+def all_leds() -> pd.DataFrame:
+    # Temporary hack: return all speakers from the table which have a LED attached
+    return _table.dropna()
 
 
-def shift_setup(delta=(0, 0)):
+def shift_setup(delta: tuple) -> None:
     """
     Shift the setup (relative to the lister) by adding some delta value
     in azimuth and elevation. This can be used when chaning the position of
@@ -198,7 +186,7 @@ def shift_setup(delta=(0, 0)):
     Args:
         delta (tuple of floats): azimuth and elevation by which the setup is
         shifted. Positive values mean shifting right/up, negative values
-        mean shiftig left/down
+        mean shifting left/down
     """
     global _table
     _table[:, 3] += delta[0]  # azimuth

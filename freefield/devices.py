@@ -119,7 +119,7 @@ class Devices(object):
         Write data to device(s).
 
         Set a tag on one or multiple processors to a given value. Processors
-        are adressed by their name (the key in the _procs dictionary). The same
+        are addressed by their name (the key in the _procs dictionary). The same
         tag can be set to the same value on multiple processors by giving a
         list of names. One can set multiple tags by giving lists for variable,
         value and procs (procs can be a list of lists, see example).

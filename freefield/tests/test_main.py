@@ -24,8 +24,10 @@ def test_get_speaker():
         assert len(speaker) == 7
         assert speaker[3] == azi and speaker[4] == ele
 
+
 def test_shift_setup():
     pass
+
 
 def test_set_signal_and_speaker():
     pass

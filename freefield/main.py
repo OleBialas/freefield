@@ -129,15 +129,15 @@ def get_speaker(index_number: Union[int, bool] = None, coordinates: Union[list, 
     row = pd.DataFrame()
     if (index_number is None and coordinates is None) or (index_number is not None and coordinates is not None):
         raise ValueError("You have to specify a the index OR coordinates of the speaker!")
-    if index_number:
+    if index_number is not None:
         row = _table.loc[(_table.index_number == index_number)]
-    elif coordinates:
+    elif coordinates is not None:
         if len(coordinates) != 2:
             raise ValueError("Coordinates must have two elements: azimuth and elevation!")
         row = _table.loc[(_table.azi == coordinates[0]) & (_table.ele == coordinates[1])]
     if len(row) > 1:
         logging.warning("More or then one row returned!")
-    if len(row) == 0:
+    elif len(row) == 0:
         logging.warning("No entry found that matches the criterion!")
     return row
 
@@ -148,7 +148,7 @@ def get_speaker_list(speaker_list: list) -> pd.DataFrame:
     for each element of the list.
 
     Args:
-        speakers (list or list of lists): indices or coordinates of speakers.
+        speaker_list (list or list of lists): indices or coordinates of speakers.
 
     Returns:
         list of lists: rows from _table corresponding to the list.
@@ -158,12 +158,12 @@ def get_speaker_list(speaker_list: list) -> pd.DataFrame:
     if (all(isinstance(x, int) for x in speaker_list) or  # list contains indices
             all(isinstance(x, np.int64) for x in speaker_list)):
         speakers = [get_speaker(index_number=i) for i in speaker_list]
-        speakers = [df.set_index('index') for df in speakers]
+        speakers = [df.set_index('index_number') for df in speakers]
         speakers = pd.concat(speakers)
     elif (all(isinstance(x, tuple) for x in speaker_list) or  # list contains coords
           all(isinstance(x, list) for x in speaker_list)):
         speakers = [get_speaker(coordinates=i) for i in speaker_list]
-        speakers = [df.set_index('index') for df in speakers]
+        speakers = [df.set_index('index_number') for df in speakers]
         speakers = pd.concat(speakers)
     if len(speaker_list) == 0:
         logging.warning("No speakers found that match the criteria!")
@@ -189,8 +189,8 @@ def shift_setup(delta: tuple) -> None:
         mean shifting left/down
     """
     global _table
-    _table[:, 3] += delta[0]  # azimuth
-    _table[:, 4] += delta[1]  # elevation
+    _table.azi += delta[0]  # azimuth
+    _table.ele += delta[1]  # elevation
     logging.info("shifting the loudspeaker array by % s degree in azimuth / n"
                  "and % s degree in elevation" % (delta[0], delta[1]))
 

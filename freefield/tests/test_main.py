@@ -1,6 +1,7 @@
 from freefield import main
 import multiprocessing
 import time
+import numpy as np
 main.initialize_setup(setup="dome", default_mode="play_rec")
 
 
@@ -32,7 +33,15 @@ def test_get_speaker():
 
 
 def test_shift_setup():
-    pass
+    for _ in range(10):
+        index_number = np.random.randint(0, 47)
+        pre_shift = main.get_speaker(index_number=index_number)
+        delta = (np.round(np.random.uniform(-10, 10), 2), np.round(np.random.uniform(-10, 10), 2))
+        main.shift_setup(delta=delta)
+        post_shift = main.get_speaker(index_number=index_number)
+        assert (post_shift.azi.iloc[0] - pre_shift.azi.iloc[0]).round(2) == delta[0]
+        assert (post_shift.ele.iloc[0] - pre_shift.ele.iloc[0]).round(2) == delta[1]
+    main.initialize_setup(setup="dome", default_mode="play_rec")
 
 
 def test_set_signal_and_speaker():

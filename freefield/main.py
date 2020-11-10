@@ -108,7 +108,7 @@ def wait_to_finish_playing(proc: str = "all", tag: str = "playback") -> None:
     logging.info('Done waiting.')
 
 
-def get_speaker(index: Union[int, bool] = None, coordinates: Union[list, bool] = None) -> pd.DataFrame:
+def get_speaker(index_number: Union[int, bool] = None, coordinates: Union[list, bool] = None) -> pd.DataFrame:
     """
     Either return the speaker at given coordinates (azimuth, elevation) or the
     speaker with a specific index number.
@@ -127,10 +127,10 @@ def get_speaker(index: Union[int, bool] = None, coordinates: Union[list, bool] =
         int: index of the device the LED is attached to (1 or 2)
     """
     row = pd.DataFrame()
-    if bool(index) == bool(coordinates):
+    if bool(index_number) == bool(coordinates):
         raise ValueError("You have to specify a the index OR coordinates of the speaker!")
-    if index:
-        row = _table.loc[(_table['index'] == index)]
+    if index_number:
+        row = _table.loc[(_table['index'] == index_number)]
     elif coordinates:
         if len(coordinates) != 2:
             raise ValueError("Coordinates must have two elements: azimuth and elevation!")
@@ -157,7 +157,7 @@ def get_speaker_list(speakers: list) -> pd.DataFrame:
     speaker_list = pd.DataFrame()
     if (all(isinstance(x, int) for x in speakers) or  # list contains indices
             all(isinstance(x, np.int64) for x in speakers)):
-        speaker_list = [get_speaker(index=i) for i in speakers]
+        speaker_list = [get_speaker(index_number=i) for i in speakers]
         speaker_list = [df.set_index('index') for df in speaker_list]
         speaker_list = pd.concat(speaker_list)
     elif (all(isinstance(x, tuple) for x in speakers) or  # list contains coords

@@ -130,11 +130,11 @@ def get_speaker(index_number: Union[int, bool] = None, coordinates: Union[list, 
     if bool(index_number) == bool(coordinates):
         raise ValueError("You have to specify a the index OR coordinates of the speaker!")
     if index_number:
-        row = _table.loc[(_table['index'] == index_number)]
+        row = _table.loc[(_table.index_number == index_number)]
     elif coordinates:
         if len(coordinates) != 2:
             raise ValueError("Coordinates must have two elements: azimuth and elevation!")
-        row = _table.loc[(_table["azi"] == coordinates[0]) & (_table['ele'] == coordinates[1])]
+        row = _table.loc[(_table.azi == coordinates[0]) & (_table.ele == coordinates[1])]
     if len(row) > 1:
         logging.warning("More or then one row returned!")
     if len(row) == 0:

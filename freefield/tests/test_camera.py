@@ -1,4 +1,4 @@
-import numpy
+import numpy as np
 from freefield import DIR, Cameras
 import cv2
 import os
@@ -9,15 +9,15 @@ class VirtualCam(Cameras):
     def __init__(self):
         super().__init__()
         self.ncams = 1
-        self.imsize = self.acquire_images(n=1).shape[0:2]
+        test_image = self.acquire_images(n=1)
+        self.imsize = test_image.shape[0:2]
 
-    def acquire_images(self, n=1):
+    def acquire_images(self, n: int = 1) -> np.ndarray:
 
-        image = numpy.random.choice(os.listdir(DIR/"tests"/"images"))
+        image = np.random.choice(os.listdir(DIR/"tests"/"images"))
         image = cv2.imread(str(DIR/"tests"/"images"/image))[:, :, 0]
         if hasattr(self, "imsize"):
-            image_data = numpy.zeros((self.imsize)+(n, self.ncams),
-                                     dtype="uint8")
+            image_data = np.zeros(self.imsize+(n, self.ncams), dtype="uint8")
         else:
             image_data = None
         for i_image in range(n):
@@ -27,6 +27,9 @@ class VirtualCam(Cameras):
                 else:
                     image_data = image
         return image_data
+
+    def halt(self):
+        pass
 
 
 def test_camera():

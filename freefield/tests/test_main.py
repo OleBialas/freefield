@@ -1,8 +1,14 @@
-from freefield import main
+from freefield import main, camera, DIR
 import multiprocessing
 import time
 import numpy as np
-main.initialize_setup(setup="dome", default_mode="play_rec")
+import pandas as pd
+import slab
+from freefield.tests.test_camera import VirtualCam
+main.initialize_setup(setup="dome", default_mode="play_rec", camera_type=None)
+cam = VirtualCam()
+cam.calibrate(pd.read_csv(DIR / "tests" / "coordinates.csv"), plot=False)
+main._cameras = cam
 
 
 def test_wait():
@@ -45,6 +51,25 @@ def test_shift_setup():
 
 
 def test_set_signal_and_speaker():
-    pass
+    # TODO: test applying calibration
+    signals = [np.random.random(size=1000), slab.Sound(np.random.random(size=1000))]
+    speakers = [np.random.randint(0, 47), [0, 0]]
+    procs = ["RX81", "RX82"]
+    for signal in signals:
+        for proc in procs:
+            for speaker in speakers:
+                main.set_signal_and_speaker(signal, speaker, proc)
+
+
+def test_get_recording_delay():
+    delay = main.get_recording_delay()
+    assert delay == 227
+    delay = main.get_recording_delay(play_device="RX8", rec_device="RP2")
+    assert delay == 316
+
+
+def test_check_pose():
+    assert main.check_pose(var=100) is True
+    assert main.check_pose(var=0) is False
 
 

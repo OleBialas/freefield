@@ -4,32 +4,28 @@ import glob
 from copy import deepcopy
 import numpy as np
 import slab
-from typing import Union
+from typing import Union, Optional
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from freefield import camera
 import pandas as pd
 import datetime
-from freefield import DIR, Devices
+from freefield import DIR
+from freefield import Devices as Devs
 import logging
 
 logging.basicConfig(level=logging.WARNING)
-# default samplerate for generating sounds, filters etc.
-slab.Signal.set_default_samplerate(48828)
-
-_config = None  # either "dome" or "arc"
-_devices = Devices()
+slab.Signal.set_default_samplerate(48828)  # default samplerate for generating sounds, filters etc.
+# Initialize global variables:
+Cameras = None
+Devices = Devs()
 _calibration_freqs = None  # filters for frequency equalization
 _calibration_lvls = None  # calibration to equalize levels
 _table = pd.DataFrame()  # numbers and coordinates of all loudspeakers
-_rec_tresh = 65  # treshold in dB above which recordings are not rejected
-_fix_ele = 0  # fixation points' elevation
-_fix_azi = 0  # fixation points' azimuth
-_fix_acc = 10  # accuracy for determining if subject looks at fixation point
 
 
-def initialize_setup(setup: str, default_mode: Union[str, bool] = None, device_list: Union[list, bool] = None,
-                     zbus: bool = True, connection: str = "GB") -> None:
+def initialize_setup(setup: str, default_mode: Union[str, bool] = None, device_list: Optional[list] = None,
+                     zbus: bool = True, connection: str = "GB", camera_type: Optional[str] = "flir") -> None:
     """
     Initialize the devices and load table and calibration for setup.
 
@@ -45,25 +41,26 @@ def initialize_setup(setup: str, default_mode: Union[str, bool] = None, device_l
         device_list: if not using a default, specify the devices in a list, see devices.initialize_devices
         zbus: whether or not to initialize the zbus interface
         connection: type of connection to devices, can be "GB" (optical) or "USB"
+        camera_type: kind of camera that is initialized. Can be "webcam", "flir" or None
     """
 
     # TODO: put level and frequency equalization in one common file
-    global _config, _calibration_freqs, _calibration_lvls, _table, _devices
+    global _calibration_freqs, _calibration_lvls, _table, Devices, Cameras
     # initialize devices
     if bool(device_list) == bool(default_mode):
         raise ValueError("You have to specify a device_list OR a default_mode")
     if device_list is not None:
-        _devices.initialize_devices(device_list, zbus, connection)
+        Devices.initialize_devices(device_list, zbus, connection)
     elif default_mode is not None:
-        _devices.initialize_default(default_mode)
+        Devices.initialize_default(default_mode)
+    if camera_type is not None:
+        _cameras = camera.initialize_cameras(camera_type)
     # get the correct speaker table and calibration files for the setup
     if setup == 'arc':
-        _config = 'arc'
         freq_calibration_file = DIR / 'data' / Path('frequency_calibration_arc.npy')
         lvl_calibration_file = DIR / 'data' / Path('level_calibration_arc.npy')
         table_file = DIR / 'data' / 'tables' / Path('speakertable_arc.txt')
     elif setup == 'dome':
-        _config = 'dome'
         freq_calibration_file = DIR / 'data' / Path('frequency_calibration_dome.npy')
         lvl_calibration_file = DIR / 'data' / Path('level_calibration_dome.npy')
         table_file = DIR / 'data' / 'tables' / Path('speakertable_dome.txt')
@@ -99,13 +96,24 @@ def wait_to_finish_playing(proc: str = "all", tag: str = "playback") -> None:
         tag (str): name of the tag that signals if something is played
     """
     if proc == "all":
-        proc = list(_devices.procs.keys())
+        proc = list(Devices.procs.keys())
     elif isinstance(proc, str):
         proc = [proc]
     logging.info(f'Waiting for {tag} on {proc}.')
-    while any(_devices.read(tag, n_samples=1, proc=p) for p in proc):
+    while any(Devices.read(tag, n_samples=1, proc=p) for p in proc):
         time.sleep(0.01)
     logging.info('Done waiting.')
+
+
+def wait_for_button():
+    while not Devices.read(tag="response", proc="RP2"):
+        time.sleep(0.1)  # wait until button is pressed
+
+
+def play_and_wait():
+    Devices.trigger()
+    wait_to_finish_playing()
+    pass
 
 
 def get_speaker(index_number: Union[int, bool] = None, coordinates: Union[list, bool] = None) -> pd.DataFrame:
@@ -114,7 +122,7 @@ def get_speaker(index_number: Union[int, bool] = None, coordinates: Union[list, 
     speaker with a specific index number.
 
     Args:
-        index (int): index number of the speaker
+        index_number (int): index number of the speaker
         coordinates (list of floats): azimuth and elevation of the speaker
 
     Returns:
@@ -195,48 +203,50 @@ def shift_setup(delta: tuple) -> None:
                  "and % s degree in elevation" % (delta[0], delta[1]))
 
 
-def set_signal_and_speaker(signal=None, speaker=0, apply_calibration=False):
+def set_signal_and_speaker(signal, speaker: Union[int, list],  proc: str,
+                           apply_calibration: bool = True) -> None:
     '''
         Upload a signal to the correct RX8 and channel (channel on the other
         RX8 set to -1). If apply_calibration=True, apply the speaker's inverse
-        filter before upoading. 'speaker' can be a speaker number (1-48) or
+        filter before uploading. 'speaker' can be a speaker number (1-48) or
         a tuple (azimuth, elevation).
-        '''
-    if isinstance(speaker, tuple):
-        speaker, channel, chidx, azimuth, elevation, bitval, bitidx = \
-            get_speaker(coordinates=(speaker[0], speaker[1]))
+    '''
+    signal = slab.Sound(signal)
+    if isinstance(speaker, list):
+        speaker = get_speaker(coordinates=speaker)
     elif isinstance(speaker, int):
-        speaker, channel, chidx, azimuth, elevation, bitval, bitidx = \
-            get_speaker(index=speaker)
-    toplay = deepcopy(signal)  # copy the signal so the original is not changed
+        speaker = get_speaker(index_number=speaker)
+    to_play = deepcopy(signal)  # copy the signal so the original is not changed
     if apply_calibration:
-        if _calibration_freqs is None:
+        if _calibration_freqs is None or _calibration_lvls is None:
             logging.warning("Setup is not calibrated!")
-        else:
-            logging.info('Applying calibration.')
-        toplay.level *= _calibration_lvls[int(speaker)]
-        toplay = _calibration_freqs.channel(
-            int(speaker)).apply(toplay)
-    _devices.write(['chan', 'data'], [channel, toplay.data], [proc, proc])
-    # set the other channel to non existant
-    set_variable(variable='chan', value=25, proc=3 - proc)
+        elif isinstance(_calibration_freqs, slab.Filter) and isinstance(_calibration_lvls, np.ndarray):
+            logging.info('Applying calibration.')  # apply level and frequency calibration
+            to_play.level *= _calibration_lvls[int(speaker)]
+            to_play = _calibration_freqs.channel(int(speaker)).apply(to_play)
+    Devices.write(tag='chan', value=speaker.channel.iloc[0], procs=proc)
+    Devices.write(tag='data', value=to_play.data, procs=proc)
+    other_procs = list(_table["analog_proc"].unique())
+    other_procs.remove(proc)  # set the analog output of other procs to non existent number 99
+    Devices.write(tag='chan', value=99, procs=proc)
 
 
-def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
-                        rec_device=None):
+def get_recording_delay(distance: float = 1.6, sample_rate: int = 48828, play_device: Optional[str] = None,
+                        rec_device: Optional[str] = None) -> int:
     """
         Calculate the delay it takes for played sound to be recorded. Depends
         on the distance of the microphone from the speaker and on the devices
         digital-to-analog and analog-to-digital conversion delays.
         """
-    n_sound_traveling = int(distance / 343 * samplerate)
+    n_sound_traveling = int(distance / 343 * sample_rate)
     if play_device:
         if play_device == "RX8":
             n_da = 24
         elif play_device == "RP2":
             n_da = 30
         else:
-            raise ValueError("Input %s not understood!" % (play_device))
+            logging.warning(f"dont know D/A-delay for device type {play_device}...")
+            n_da = 0
     else:
         n_da = 0
     if rec_device:
@@ -245,73 +255,58 @@ def get_recording_delay(distance=1.6, samplerate=48828.125, play_device=None,
         elif rec_device == "RP2":
             n_ad = 65
         else:
-            raise ValueError("Input %s not understood!" % (rec_device))
+            logging.warning(f"dont know A/D-delay for device type {rec_device}...")
+            n_ad = 0
     else:
         n_ad = 0
     return n_sound_traveling + n_da + n_ad
 
 
-def check_pose(target=None, var=10):
+def check_pose(fix: Optional[list] = None, var: int = 10) -> bool:
     """ Take an image and check if head is pointed to the target position +/- var.
     Returns True or False. NaN values are ignored."""
-    if target is None:
-        target = (_fix_azi, _fix_ele)
-    correct = True
-    ele, azi = camera.get_headpose(convert=True, average=True, n_images=1)
-    if azi is np.nan:
-        pass
+    if fix is None:
+        fix = [0, 0]
+    if isinstance(Cameras, camera.Cameras):
+        ele, azi = Cameras.get_headpose(convert=True, average=True, n=1)
+        if azi is np.nan:  # if the camera is not calibrated in one direction, NaN will be returned -> ignore
+            azi = fix[0]
+        if ele is np.nan:
+            ele = fix[1]
+        if np.abs(azi - fix[0]) > var or np.abs(ele - fix[1]) > var:
+            return False
+        else:
+            return True
     else:
-        if np.abs(ele - target[0]) > var:
-            correct = False
-    if ele is np.nan:
-        pass
-    else:
-        if np.abs(ele - target[1]) > var:
-            correct = False
-    return correct
+        logging.warning("Cameras were not initialized...")
+        return False
 
-    # functions implementing complete procedures:
-    def calibrate_camera(self, n_reps=1):
-        # azimuth and elevation of a set of points in camera and world coords
-        # one list for each camera
-        coords = pd.DataFrame(columns=["ele_cam", "azi_cam", "ele_world",
-                                       "azi_world", "cam", "frame", "n"])
-        if _cam_type == "web" and targets is None:
-            raise ValueError("Define target positions for calibrating webcam!")
-        elif _cam_type == "freefield":
-            targets = setup.all_leds()  # get the speakers that have a LED attached
-            if setup._mode != "camera_calibration":
-                setup.initialize_devices(mode="camera_calibration")
-        elif _cam_type is None:
-            raise ValueError("Initialize Camera before calibration!")
-        if not setup._mode == "camera_calibration":  # initialize setup
-            setup.initialize_devices(mode="camera_calibration")
-        seq = Trialsequence(n_reps=n_reps, conditions=targets)
-        while seq.n_remaining:
-            target = seq.__next__()
-            if _cam_type == "web":  # look at target position and press enter
-                ele, azi = target[0], target[1]
-                input("point your head towards the target at elevation: %s and "
-                      "azimuth %s. \n Then press enter to take an image an get "
-                      "the headpose" % (ele, azi))
-            elif _cam_type == "freefield":  # light LED and wait for button press
-                ele, azi = target[4], target[3]
-                proc, bitval = target[6], target[5]
-                setup.printv("trial nr %s: speaker at ele: %s and azi: of %s" %
-                             (seq.this_n, ele, azi))
-                setup.set_variable(variable="bitmask", value=bitval, proc=proc)
-                while not setup.get_variable(variable="response", proc="RP2",
-                                             supress_print=True):
-                    time.sleep(0.1)  # wait untill button is pressed
-            pose = get_headpose(average=False, convert=False, cams=cams)
-            pose = pose.rename(columns={"ele": "ele_cam", "azi": "azi_cam"})
-            pose.insert(0, "n", seq.this_n)
-            pose.insert(2, "ele_world", ele)
-            pose.insert(4, "azi_world", azi)
-            pose = pose.dropna()
-            coords = coords.append(pose, ignore_index=True, sort=True)
-        if _cam_type == "freefield":
-            setup.set_variable(variable="bitmask", value=0, proc="RX8s")
+
+# functions implementing complete procedures:
+
+
+def calibrate_camera(targets: pd.DataFrame, n_reps: int = 1) -> pd.DataFrame:
+    coords = pd.DataFrame(columns=["ele_cam", "azi_cam", "ele_world", "azi_world", "cam", "frame", "n"])
+    if not Devices.mode == "cam_calibration":  # initialize setup
+        Devices.initialize_default(mode="cam_calibration")
+    targets = [targets.loc[i] for i in targets.index]
+    seq = slab.Trialsequence(n_reps=n_reps, conditions=targets)
+    for trial in seq:
+        logging.info(f"trial nr {seq.this_n}: \n target at elevation of {trial.ele} and azimuth of {trial.azi}")
+        Devices.write(tag="bitmask", value=int(trial.bit), procs=trial.digital_proc)
+        wait_for_button()
+        pose = Cameras.get_headpose(average=False, convert=False)
+
+        pose = pose.rename(columns={"ele": "ele_cam", "azi": "azi_cam"})
+        pose.insert(0, "n", seq.this_n)
+        pose.insert(2, "ele_world", ele)
+        pose.insert(4, "azi_world", azi)
+        pose = pose.dropna()
+        coords = coords.append(pose, ignore_index=True, sort=True)
+    if _cam_type == "freefield":
+        setup.set_variable(variable="bitmask", value=0, proc="RX8s")
+
+    return coords
 
 
 def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=False):

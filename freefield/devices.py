@@ -25,7 +25,7 @@ class Devices(object):
     def __init__(self):
         # TODO: initialize devices when creating class instance
         self.procs = dict()
-        self._mode = None
+        self.mode = None
         self._zbus = None
 
     def initialize_devices(self, device_list: list, zbus: bool = False,
@@ -66,8 +66,8 @@ class Devices(object):
                                                      connection, index)
         if zbus:
             self._zbus = self._initialize_zbus(connection)
-        if self._mode is None:
-            self._mode = "custom"
+        if self.mode is None:
+            self.mode = "custom"
 
     def initialize_default(self, mode: str) -> None:
         """
@@ -109,11 +109,11 @@ class Devices(object):
                            ('RX82', 'RX8', DIR/'data'/'rcx'/'bits.rcx')]
         else:
             raise ValueError(f'mode {mode} is not a valid input!')
-        self._mode = mode
+        self.mode = mode
         logging.info(f'set mode to {mode}')
         self.initialize_devices(device_list, True, "GB")
 
-    def write(self, tag: str, value: Union[int, float, list],
+    def write(self, tag: Union[str, list], value: Union[int, float, list],
               procs: Union[str, list]) -> int:
         """
         Write data to device(s).

@@ -7,6 +7,8 @@ import slab
 from typing import Union, Optional
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
+from slab import Trialsequence
+
 from freefield import camera
 import pandas as pd
 import datetime
@@ -68,7 +70,8 @@ def initialize_setup(setup: str, default_mode: Union[str, bool] = None, device_l
         raise ValueError("Unknown device! Use 'arc' or 'dome'.")
     logging.info(f'Speaker configuration set to {setup}.')
     # lambdas provide default values of 0 if azi or ele are not in the file
-    _table = pd.read_csv(table_file)
+    _table = pd.read_csv(table_file, dtype={"index_number": "Int64", "channel": "Int64", "analog_proc": "category",
+                         "azi": float, "ele": float, "bit": "Int64", "digital_proc": "category"})
     logging.info('Speaker table loaded.')
     if freq_calibration_file.exists():
         _calibration_freqs = slab.Filter.load(freq_calibration_file)
@@ -285,9 +288,11 @@ def check_pose(fix: Optional[list] = None, var: int = 10) -> bool:
 # functions implementing complete procedures:
 
 
-def calibrate_camera(targets: pd.DataFrame, n_reps: int = 1) -> pd.DataFrame:
-    coords = pd.DataFrame(columns=["ele_cam", "azi_cam", "ele_world", "azi_world", "cam", "frame", "n"])
-    if not Devices.mode == "cam_calibration":  # initialize setup
+def calibrate_camera(targets: pd.DataFrame, n_reps: int = 1, n_images: int = 5) -> pd.DataFrame:
+    if not isinstance(Cameras, camera.Cameras):
+        raise ValueError("Camera must be initialized before calibration!")
+    coords = pd.DataFrame(columns=["azi_cam", "azi_world", "ele_cam", "ele_world", "cam", "frame", "n"])
+    if not Devices.mode == "cam_calibration":  # initialize setup in camera calibration mode
         Devices.initialize_default(mode="cam_calibration")
     targets = [targets.loc[i] for i in targets.index]
     seq = slab.Trialsequence(n_reps=n_reps, conditions=targets)
@@ -295,17 +300,15 @@ def calibrate_camera(targets: pd.DataFrame, n_reps: int = 1) -> pd.DataFrame:
         logging.info(f"trial nr {seq.this_n}: \n target at elevation of {trial.ele} and azimuth of {trial.azi}")
         Devices.write(tag="bitmask", value=int(trial.bit), procs=trial.digital_proc)
         wait_for_button()
-        pose = Cameras.get_headpose(average=False, convert=False)
-
-        pose = pose.rename(columns={"ele": "ele_cam", "azi": "azi_cam"})
+        pose = Cameras.get_headpose(average=False, convert=False, n=n_images)
         pose.insert(0, "n", seq.this_n)
-        pose.insert(2, "ele_world", ele)
-        pose.insert(4, "azi_world", azi)
+        pose = pose.rename(columns={"azi": "azi_cam", "ele": "ele_cam"})
+        pose.insert(2, "ele_world", trial.ele)
+        pose.insert(4, "azi_world", trial.azi)
         pose = pose.dropna()
         coords = coords.append(pose, ignore_index=True, sort=True)
-    if _cam_type == "freefield":
-        setup.set_variable(variable="bitmask", value=0, proc="RX8s")
-
+        Devices.write(tag="bitmask", value=0, procs=trial.digital_proc)
+    Cameras.calibrate(coords, plot=True)
     return coords
 
 

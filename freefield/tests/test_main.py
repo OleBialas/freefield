@@ -6,9 +6,10 @@ import pandas as pd
 import slab
 from freefield.tests.test_camera import VirtualCam
 main.initialize_setup(setup="dome", default_mode="play_rec", camera_type=None)
+# TODO: test arc as well!
 cam = VirtualCam()
 cam.calibrate(pd.read_csv(DIR / "tests" / "coordinates.csv"), plot=False)
-main._cameras = cam
+main.Cameras = cam
 
 
 def test_wait():
@@ -47,7 +48,7 @@ def test_shift_setup():
         post_shift = main.get_speaker(index_number=index_number)
         assert (post_shift.azi.iloc[0] - pre_shift.azi.iloc[0]).round(2) == delta[0]
         assert (post_shift.ele.iloc[0] - pre_shift.ele.iloc[0]).round(2) == delta[1]
-    main.initialize_setup(setup="dome", default_mode="play_rec")
+    main.initialize_setup(setup="dome", default_mode="play_rec", camera_type=None)
 
 
 def test_set_signal_and_speaker():
@@ -72,4 +73,9 @@ def test_check_pose():
     assert main.check_pose(var=100) is True
     assert main.check_pose(var=0) is False
 
+def test_calibrate_camera():
+    targets = main.all_leds()
+    coords = main.calibrate_camera(targets, n_reps=1, n_images=1)
 
+def test_localization_test_freefield():
+    pass

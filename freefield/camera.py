@@ -93,7 +93,6 @@ class Cameras:
         if plot:
             fig, ax = plt.subplots(2)
             fig.suptitle("World vs Camera Coordinates")
-
         for cam in pd.unique(coords["cam"]):  # calibrate each camera
             cam_coords = coords[coords["cam"] == cam]
             # find regression coefficients for azimuth and elevation
@@ -102,8 +101,7 @@ class Cameras:
                 y = cam_coords[angle+"_world"].values.astype(float)
                 b, a, r, _, _ = stats.linregress(x, y)
                 if np.abs(r) < 0.85:
-                    logging.warning(f"Correlation for camera {cam}",
-                                    f"{angle} is only {r}!")
+                    logging.warning(f"Correlation for camera {cam} {angle} is only {r}!")
                 row = {"a": a, "b": b, "cam": cam, "angle": angle}
                 calibration = calibration.append(row, ignore_index=True)
                 if plot:
@@ -113,7 +111,6 @@ class Cameras:
                     ax[i].legend()
                     ax[i].set_xlabel("camera coordinates in degree")
                     ax[i].set_ylabel("world coordinates in degree")
-
         self.calibration = calibration
         if plot:
             plt.show()

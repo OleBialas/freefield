@@ -126,13 +126,13 @@ class Devices(object):
 
         This function will call SetTagVal or WriteTagV depending on whether
         value is a single integer or float or an array. If the tag could
-        not be set (there are different resons why that might be the case) a
+        not be set (there are different reasons why that might be the case) a
         warning is triggered. CAUTION: If the data type of the value arg does
-        not match the data type of the tag, write might be successfull but
+        not match the data type of the tag, write might be successful but
         the processor might behave strangely.
 
         Args:
-            tag : name of the tag in the rcx-circucit where value is
+            tag : name of the tag in the rcx-circuit where value is
                 written to
             value : value that is written to the tag. Must
                 match the data type of the tag.

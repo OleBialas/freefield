@@ -7,8 +7,6 @@ import slab
 from typing import Union, Optional
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
-from slab import Trialsequence
-
 from freefield import camera
 import pandas as pd
 import datetime
@@ -108,16 +106,19 @@ def wait_to_finish_playing(proc: str = "all", tag: str = "playback") -> None:
     logging.info('Done waiting.')
 
 
-def wait_for_button():
+def wait_for_button() -> None:
     while not Devices.read(tag="response", proc="RP2"):
         time.sleep(0.1)  # wait until button is pressed
 
 
-def play_and_wait():
+def play_and_wait() -> None:
     Devices.trigger()
     wait_to_finish_playing()
-    pass
 
+
+def play_and_wait_for_button() -> None:
+    play_and_wait()
+    wait_for_button()
 
 def get_speaker(index_number: Union[int, bool] = None, coordinates: Union[list, bool] = None) -> pd.DataFrame:
     """
@@ -206,8 +207,7 @@ def shift_setup(delta: tuple) -> None:
                  "and % s degree in elevation" % (delta[0], delta[1]))
 
 
-def set_signal_and_speaker(signal, speaker: Union[int, list],  proc: str,
-                           apply_calibration: bool = True) -> None:
+def set_signal_and_speaker(signal, speaker: Union[int, list], apply_calibration: bool = True) -> None:
     '''
         Upload a signal to the correct RX8 and channel (channel on the other
         RX8 set to -1). If apply_calibration=True, apply the speaker's inverse
@@ -227,11 +227,11 @@ def set_signal_and_speaker(signal, speaker: Union[int, list],  proc: str,
             logging.info('Applying calibration.')  # apply level and frequency calibration
             to_play.level *= _calibration_lvls[int(speaker)]
             to_play = _calibration_freqs.channel(int(speaker)).apply(to_play)
-    Devices.write(tag='chan', value=speaker.channel.iloc[0], procs=proc)
-    Devices.write(tag='data', value=to_play.data, procs=proc)
+    Devices.write(tag='chan', value=speaker.channel.iloc[0], procs=speaker.analog_proc)
+    Devices.write(tag='data', value=to_play.data, procs=speaker.analog_proc)
     other_procs = list(_table["analog_proc"].unique())
-    other_procs.remove(proc)  # set the analog output of other procs to non existent number 99
-    Devices.write(tag='chan', value=99, procs=proc)
+    other_procs.remove(speaker.analog_proc)  # set the analog output of other procs to non existent number 99
+    Devices.write(tag='chan', value=99, procs=speaker.analog_proc)
 
 
 def get_recording_delay(distance: float = 1.6, sample_rate: int = 48828, play_device: Optional[str] = None,
@@ -312,7 +312,8 @@ def calibrate_camera(targets: pd.DataFrame, n_reps: int = 1, n_images: int = 5) 
     return coords
 
 
-def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=False):
+def localization_test_freefield(speakers: pd.DataFrame, duration: float = 0.5, n_reps: int = 1,
+                                n_images: int = 5, visual: bool = False) -> slab.Trialsequence:
     """
     Run a basic localization test where the same sound is played from different
     speakers in randomized order, without playing the same position twice in
@@ -320,69 +321,40 @@ def localization_test_freefield(duration=0.5, n_reps=1, speakers=None, visual=Fa
     to localize the sound source by pointing the head towards the source and
     pressing the response button. The cameras need to be calibrated before the
     test! After every trial the listener has to point to the middle speaker at
-    0 elevation and azimuth and press the button to iniciate the next trial.
+    0 elevation and azimuth and press the button to indicate the next trial.
     """
     # TODO: one function for fundamental trial-unit?
-    if not _mode == "localization_test_freefield":
-        initialize_devices(mode="localization_test_freefield")
-    if camera._cal is None:
-        raise ValueError("Camera must be calibrated before localization test!")
-    warning = slab.Sound.clicktrain(duration=0.4).data.flatten()
+    if not isinstance(Cameras, camera.Cameras) or Cameras.calibration is not None:
+        raise ValueError("Camera must be initialized and calibrated before localization test!")
+    if not Devices.mode == "loctest_freefield":
+        Devices.initialize_default(mode="loctest_freefield")
+    warning = slab.Sound.clicktrain(duration=duration)
+    Devices.write(tag="playbuflen", value=int(slab.signal._default_samplerate*duration), procs=["RX81", "RX82"])
     if visual is True:
-        speakers = all_leds()
-    else:
-        speakers = speakers_from_list(speakers)  # should return same format
+        if speakers.bit.isnull.sum():
+            raise ValueError("All speakers must have a LED attached for a test with visual cues")
+    speakers = [speakers.loc[i] for i in speakers.index]
     seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
-    response = pd.DataFrame(columns=["ele_target", "azi_target", "ele_response", "azi_response"])
-    start = slab.Sound.read("localization_test_start.wav").channel(0)
-    # could be one function:
-    set_signal_and_speaker(signal=start, speaker=23, apply_calibration=False)
-    trigger()
-    wait_to_finish_playing()
-    while not get_variable(variable="response", proc="RP2"):
-        time.sleep(0.01)
-    while seq.n_remaining > 0:
+    start = slab.Sound.read(DIR/"data"/"sounds"/"start.wav").channel(0)
+    set_signal_and_speaker(signal=start, speaker=23)
+    play_and_wait()
+    for trial in seq:
+        wait_for_button()
+        while check_pose(fix=[0, 0]) is None:  # check if head is in position
+            set_signal_and_speaker(signal=warning, speaker=23)
+            play_and_wait_for_button()
         sound = slab.Sound.pinknoise(duration=duration)
-        _, ch, proc_ch, azi, ele, bit, proc_bit = seq.__next__()
-        # TODO response into trial sequence
-        trial = {"azi_target": azi, "ele_target": ele}
-        # give dictionary or list of variables ?
-        set_variable(variable="chan", value=ch, proc="RX8%s" % int(proc_ch))
-        set_variable(variable="chan", value=25, proc="RX8%s" % int(3 - proc_ch))
-        set_variable(variable="playbuflen", value=len(sound), proc="RX8s")
-        set_variable(variable="data", value=sound.data, proc="RX8s")
-        if visual is True:
-            set_variable(variable="bitmask", value=bit, proc=proc_bit)
-        trigger()
-        while not get_variable(variable="response", proc="RP2"):
-            time.sleep(0.01)
-        ele, azi = camera.get_headpose(convert=True, average=True, target=(azi, ele))
-        if visual is True:
-            set_variable(variable="bitmask", value=0, proc=proc_bit)
-        trial["azi_response"], trial["ele_response"] = azi, ele
-        response = response.append(trial, ignore_index=True)
-        head_in_position = 0
-        while head_in_position == 0:
-            while not get_variable(variable="response", proc="RP2"):
-                time.sleep(0.01)
-            ele, azi = camera.get_headpose(convert=True, average=True, n_images=1)
-            if ele is np.nan:
-                ele = 0
-            if azi is np.nan:
-                azi = 0
-            if np.abs(ele - _fix_ele) < _fix_acc and np.abs(azi - _fix_azi) < _fix_acc:
-                head_in_position = 1
-            else:
-                print(np.abs(ele - _fix_ele), np.abs(azi - _fix_azi))
-                set_variable(variable="data", value=warning, proc="RX8s")
-                set_variable(variable="chan", value=1, proc="RX81")
-                set_variable(variable="chan", value=25, proc="RX82")
-                set_variable(variable="playbuflen", value=len(warning), proc="RX8s")
-                trigger()
-    # play sound to signal end
-    set_signal_and_speaker(signal=start, speaker=23, apply_calibration=False)
-    trigger()
-    return response
+        set_signal_and_speaker(signal=sound, speaker=trial.index_number)
+        if visual is True:  # turn LED on
+            Devices.write(tag="bitmask", value=trial.bit, procs=trial.digital_proc)
+        play_and_wait_for_button()
+        pose = Cameras.get_headpose(convert=True, average=True, n=n_images)
+        if visual is True:  # turn LED off
+            Devices.write(tag="bitmask", value=0, procs=trial.digital_proc)
+        seq.add_response(pose)
+    set_signal_and_speaker(signal=start, speaker=23)  # play sound to signal end
+    play_and_wait()
+    return seq
 
 
 def localization_test_headphones(folder, speakers, n_reps=1, visual=False):

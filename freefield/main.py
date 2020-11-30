@@ -220,20 +220,23 @@ def set_signal_and_speaker(signal, speaker, apply_calibration=True):
     signal = slab.Sound(signal)
     if isinstance(speaker, list):
         speaker = get_speaker(coordinates=speaker)
-    elif isinstance(speaker, int):
+    elif isinstance(speaker, (int, np.int64, np.int32)):
         speaker = get_speaker(index_number=speaker)
+    else:
+        raise ValueError(f"Input {speaker} for argument speaker is not valid! \n"
+                         "Specify either an index number or coordinates of the speaker!")
     to_play = deepcopy(signal)  # copy the signal so the original is not changed
     if apply_calibration:
         if _calibration_freqs is None or _calibration_lvls is None:
             logging.warning("Setup is not calibrated!")
         elif isinstance(_calibration_freqs, slab.Filter) and isinstance(_calibration_lvls, np.ndarray):
             logging.info('Applying calibration.')  # apply level and frequency calibration
-            to_play.level *= _calibration_lvls[int(speaker)]
-            to_play = _calibration_freqs.channel(int(speaker)).apply(to_play)
+            to_play.level *= _calibration_lvls[int(speaker.index_number)]
+            to_play = _calibration_freqs.channel(int(speaker.index_number)).apply(to_play)
     Devices.write(tag='chan', value=speaker.channel.iloc[0], procs=speaker.analog_proc)
     Devices.write(tag='data', value=to_play.data, procs=speaker.analog_proc)
     other_procs = list(_table["analog_proc"].unique())
-    other_procs.remove(speaker.analog_proc)  # set the analog output of other procs to non existent number 99
+    other_procs.remove(speaker.analog_proc.iloc[0])  # set the analog output of other procs to non existent number 99
     Devices.write(tag='chan', value=99, procs=speaker.analog_proc)
 
 
@@ -391,7 +394,11 @@ def localization_test_freefield(targets, duration=0.5, n_reps=1, n_images=5, vis
     return seq
 
 
-def localization_test_headphones(folder, speakers, n_reps=1, visual=False):
+def localization_test_headphones(speakers, n_reps=1, visual=False):
+    if not isinstance(Cameras, camera.Cameras) or Cameras.calibration is not None:
+        raise ValueError("Camera must be initialized and calibrated before localization test!")
+    if not Devices.mode == "loctest_headphones":
+        Devices.initialize_default(mode="loctest_freefield")
     folder = Path(folder)
     if not folder.exists():
         raise ValueError("Folder does not exist!")

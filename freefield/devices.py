@@ -148,6 +148,8 @@ class Devices(object):
             else:
                 procs = [item for sublist in procs for item in sublist]
         else:
+            if isinstance(value, (np.int32, np.int64)):
+                value = int(value)  # use built-int data type
             tag, value = [tag], [value]
             if isinstance(procs, str):
                 procs = [procs]
@@ -224,7 +226,7 @@ class Devices(object):
             self.procs[proc].SoftTrg(kind)
             logging.info(f'SoftTrig {kind} sent to {proc}.')
         elif 'zbus' in kind.lower():
-            if self._zbus is not None:
+            if self._zbus is None:
                 raise ValueError('ZBus needs to be initialized first!')
             elif kind.lower() == "zbusa":
                 self._zbus.zBusTrigA(0, 0, 20)
@@ -353,6 +355,8 @@ class _COM:
 
     @staticmethod
     def SetTagVal(tag: str, value: Union[int, float]) -> int:
+        if isinstance(value, (np.int32, np.int64)):
+            value = int(value)
         if not isinstance(tag, str):
             return 0
         if not isinstance(value, (int, float)):
@@ -362,6 +366,8 @@ class _COM:
 
     @staticmethod
     def GetTagVal(tag: str) -> int:
+        if tag == "playback":  # return 0 so wait function won't block
+            return 0
         if not isinstance(tag, str):
             return 0
         return 1
@@ -378,3 +384,29 @@ class _COM:
             return 1
         if n_samples > 1:
             return [random.random() for i in range(n_samples)]
+
+    @staticmethod
+    def zBusTrigA(rack_num: int, trig_type: int, delay: int) -> int:
+        if not isinstance(rack_num, int):
+            return 0
+        if not isinstance(trig_type, int):
+            return 0
+        if not isinstance(delay, int):
+            return 0
+        return 1
+
+    @staticmethod
+    def zBusTrigB(rack_num: int, trig_type: int, delay: int) -> int:
+        if not isinstance(rack_num, int):
+            return 0
+        if not isinstance(trig_type, int):
+            return 0
+        if not isinstance(delay, int):
+            return 0
+        return 1
+
+    class _oleobj_:
+        # this is a hack and should be fixed
+        @staticmethod
+        def InvokeTypes(arg1, arg2, arg3, arg4, arg5, tag, arg6, value):
+            return 1

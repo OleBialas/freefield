@@ -1,6 +1,4 @@
-from freefield import main, camera, DIR
-import multiprocessing
-import time
+from freefield import main, DIR
 import numpy as np
 import pandas as pd
 import slab
@@ -13,11 +11,9 @@ main.Cameras = cam
 
 
 def test_wait():
-    p = multiprocessing.Process(target=main.wait_to_finish_playing, name="wait", args=("RX81",))
-    p.start()
-    time.sleep(5)
-    p.terminate()
-    p.join()
+    main.play_and_wait()
+    main.wait_for_button()
+    main.wait_to_finish_playing()
 
 
 def test_get_speaker():
@@ -72,9 +68,13 @@ def test_check_pose():
     assert main.check_pose(var=100) is True
     assert main.check_pose(var=0) is False
 
+
 def test_calibrate_camera():
     targets = main.all_leds()
     coords = main.calibrate_camera(targets, n_reps=1, n_images=1)
 
+
 def test_localization_test_freefield():
+    speakers = main._table.head()
+    main.localization_test_freefield(speakers=speakers, duration=.8, n_reps=1, n_images=5, visual=False)
     pass

@@ -24,8 +24,7 @@ _calibration_lvls = None  # calibration to equalize levels
 _table = pd.DataFrame()  # numbers and coordinates of all loudspeakers
 
 
-def initialize_setup(setup: str, default_mode: Union[str, bool] = None, device_list: Optional[list] = None,
-                     zbus: bool = True, connection: str = "GB", camera_type: Optional[str] = "flir") -> None:
+def initialize_setup(setup, default_mode=None, device_list=None, zbus=True, connection="GB", camera_type="flir"):
     """
     Initialize the devices and load table and calibration for setup.
 
@@ -120,7 +119,8 @@ def play_and_wait_for_button() -> None:
     play_and_wait()
     wait_for_button()
 
-def get_speaker(index_number: Union[int, bool] = None, coordinates: Union[list, bool] = None) -> pd.DataFrame:
+
+def get_speaker(index_number=None, coordinates=None):
     """
     Either return the speaker at given coordinates (azimuth, elevation) or the
     speaker with a specific index number.
@@ -154,7 +154,7 @@ def get_speaker(index_number: Union[int, bool] = None, coordinates: Union[list, 
     return row
 
 
-def get_speaker_list(speaker_list: list) -> pd.DataFrame:
+def get_speaker_list(speaker_list):
     """
     Specify a list of either indices or coordinates and call get_speaker()
     for each element of the list.
@@ -182,12 +182,12 @@ def get_speaker_list(speaker_list: list) -> pd.DataFrame:
     return speakers
 
 
-def all_leds() -> pd.DataFrame:
+def all_leds():
     # Temporary hack: return all speakers from the table which have a LED attached
     return _table.dropna()
 
 
-def shift_setup(delta: tuple) -> None:
+def shift_setup(delta_azi, delta_ele):
     """
     Shift the setup (relative to the lister) by adding some delta value
     in azimuth and elevation. This can be used when chaning the position of
@@ -196,24 +196,27 @@ def shift_setup(delta: tuple) -> None:
     the speaker table.
 
     Args:
-        delta (tuple of floats): azimuth and elevation by which the setup is
-        shifted. Positive values mean shifting right/up, negative values
-        mean shifting left/down
+        delta_azi (float): azimuth by which the setup is shifted, positive value means shifting right
+        delta_ele (float): elevation by which the setup is shifted, positive value means shifting up
     """
     global _table
-    _table.azi += delta[0]  # azimuth
-    _table.ele += delta[1]  # elevation
+    _table.azi += delta_azi  # azimuth
+    _table.ele += delta_ele  # elevation
     logging.info("shifting the loudspeaker array by % s degree in azimuth / n"
-                 "and % s degree in elevation" % (delta[0], delta[1]))
+                 "and % s degree in elevation" % (delta_azi, delta[1]))
 
 
-def set_signal_and_speaker(signal, speaker: Union[int, list], apply_calibration: bool = True) -> None:
-    '''
-        Upload a signal to the correct RX8 and channel (channel on the other
-        RX8 set to -1). If apply_calibration=True, apply the speaker's inverse
-        filter before uploading. 'speaker' can be a speaker number (1-48) or
-        a tuple (azimuth, elevation).
-    '''
+def set_signal_and_speaker(signal, speaker, apply_calibration=True):
+    """
+    Load a signal into the device buffer and set the output channel to match the speaker.
+    The device is chosen automatically depending on the speaker.
+
+        Args:
+            signal (array-like): signal to load to the buffer, must be one-dimensional
+            speaker : speaker to play the signal from, can be index number or [azimuth, elevation]
+            apply_calibration (bool): if True (=default) apply loudspeaker equalization
+    """
+
     signal = slab.Sound(signal)
     if isinstance(speaker, list):
         speaker = get_speaker(coordinates=speaker)
@@ -234,13 +237,19 @@ def set_signal_and_speaker(signal, speaker: Union[int, list], apply_calibration:
     Devices.write(tag='chan', value=99, procs=speaker.analog_proc)
 
 
-def get_recording_delay(distance: float = 1.6, sample_rate: int = 48828, play_device: Optional[str] = None,
-                        rec_device: Optional[str] = None) -> int:
+def get_recording_delay(distance=1.6, sample_rate=48828, play_device=None, rec_device=None):
     """
         Calculate the delay it takes for played sound to be recorded. Depends
         on the distance of the microphone from the speaker and on the devices
         digital-to-analog and analog-to-digital conversion delays.
-        """
+
+        Args:
+            distance (float): distance between listener and speaker array in meters
+            sample_rate (int): sample rate under which the system is running
+            play_device (str): device used for digital to analog conversion
+            rec_device (str): device used for analog to digital conversion
+
+    """
     n_sound_traveling = int(distance / 343 * sample_rate)
     if play_device:
         if play_device == "RX8":
@@ -265,11 +274,17 @@ def get_recording_delay(distance: float = 1.6, sample_rate: int = 48828, play_de
     return n_sound_traveling + n_da + n_ad
 
 
-def check_pose(fix: Optional[list] = None, var: int = 10) -> bool:
-    """ Take an image and check if head is pointed to the target position +/- var.
-    Returns True or False. NaN values are ignored."""
-    if fix is None:
-        fix = [0, 0]
+def check_pose(fix=(0, 0), var=10):
+    """
+    Check if the head pose is directed towards the fixation point
+
+    Args:
+        fix: azimuth and elevation of the fixation point
+        var: degrees, the pose is allowed to deviate from the fixation point in azimuth and elevations
+    Returns:
+        bool: True if difference between pose and fix is smaller than var, False otherwise
+    """
+
     if isinstance(Cameras, camera.Cameras):
         ele, azi = Cameras.get_headpose(convert=True, average=True, n=1)
         if azi is np.nan:  # if the camera is not calibrated in one direction, NaN will be returned -> ignore
@@ -288,7 +303,19 @@ def check_pose(fix: Optional[list] = None, var: int = 10) -> bool:
 # functions implementing complete procedures:
 
 
-def calibrate_camera(targets: pd.DataFrame, n_reps: int = 1, n_images: int = 5) -> pd.DataFrame:
+def calibrate_camera(targets, n_reps=1, n_images=5):
+    """
+    Calibrate all cameras by lighting up a series of LEDs and estimate the pose when the head is pointed
+    towards the currently lit LED. This results in a list of world and camera coordinates which is used to
+    calibrate the cameras.
+
+    Args:
+        targets (pandas DataFrame): rows from the speaker table. The speakers must have a LED attached
+        n_reps(int): number of repetitions for each target
+        n_images(int): number of images taken for each head pose estimate
+    Returns:
+        pandas DataFrame: camera and world coordinates acquired (calibration is performed automatically)
+    """
     if not isinstance(Cameras, camera.Cameras):
         raise ValueError("Camera must be initialized before calibration!")
     coords = pd.DataFrame(columns=["azi_cam", "azi_world", "ele_cam", "ele_world", "cam", "frame", "n"])
@@ -312,8 +339,7 @@ def calibrate_camera(targets: pd.DataFrame, n_reps: int = 1, n_images: int = 5) 
     return coords
 
 
-def localization_test_freefield(speakers: pd.DataFrame, duration: float = 0.5, n_reps: int = 1,
-                                n_images: int = 5, visual: bool = False) -> slab.Trialsequence:
+def localization_test_freefield(targets, duration=0.5, n_reps=1, n_images=5, visual=False):
     """
     Run a basic localization test where the same sound is played from different
     speakers in randomized order, without playing the same position twice in
@@ -322,8 +348,16 @@ def localization_test_freefield(speakers: pd.DataFrame, duration: float = 0.5, n
     pressing the response button. The cameras need to be calibrated before the
     test! After every trial the listener has to point to the middle speaker at
     0 elevation and azimuth and press the button to indicate the next trial.
+
+    Args:
+        targets (pandas DataFrame): rows from the speaker table.
+        duration (float): duration of the noise played from the target positions in seconds
+        n_reps(int): number of repetitions for each target
+        n_images(int): number of images taken for each head pose estimate
+        visual(bool): If True, light a LED at the target position - the speakers must have a LED attached
+    Returns:
+        pandas DataFrame: camera and world coordinates acquired (calibration is performed automatically)
     """
-    # TODO: one function for fundamental trial-unit?
     if not isinstance(Cameras, camera.Cameras) or Cameras.calibration is not None:
         raise ValueError("Camera must be initialized and calibrated before localization test!")
     if not Devices.mode == "loctest_freefield":
@@ -331,9 +365,9 @@ def localization_test_freefield(speakers: pd.DataFrame, duration: float = 0.5, n
     warning = slab.Sound.clicktrain(duration=duration)
     Devices.write(tag="playbuflen", value=int(slab.signal._default_samplerate*duration), procs=["RX81", "RX82"])
     if visual is True:
-        if speakers.bit.isnull.sum():
+        if targets.bit.isnull.sum():
             raise ValueError("All speakers must have a LED attached for a test with visual cues")
-    speakers = [speakers.loc[i] for i in speakers.index]
+    speakers = [targets.loc[i] for i in targets.index]
     seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
     start = slab.Sound.read(DIR/"data"/"sounds"/"start.wav").channel(0)
     set_signal_and_speaker(signal=start, speaker=23)

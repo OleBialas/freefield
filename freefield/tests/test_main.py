@@ -13,8 +13,7 @@ main.Cameras = cam
 
 
 def test_wait():
-    p = multiprocessing.Process(target=main.wait_to_finish_playing,
-                                name="wait", args=("RX81",))
+    p = multiprocessing.Process(target=main.wait_to_finish_playing, name="wait", args=("RX81",))
     p.start()
     time.sleep(5)
     p.terminate()

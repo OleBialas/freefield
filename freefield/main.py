@@ -20,6 +20,8 @@ slab.Signal.set_default_samplerate(48828)  # default samplerate for generating s
 Cameras = None
 Devices = Devs()
 _calibration_freqs = None  # filters for frequency equalization
+_freq_calibration_file = Path()
+_lvl_calibration_file = Path()
 _calibration_lvls = None  # calibration to equalize levels
 _table = pd.DataFrame()  # numbers and coordinates of all loudspeakers
 
@@ -44,7 +46,8 @@ def initialize_setup(setup, default_mode=None, device_list=None, zbus=True, conn
     """
 
     # TODO: put level and frequency equalization in one common file
-    global _calibration_freqs, _calibration_lvls, _table, Devices, Cameras
+    global _calibration_freqs, _calibration_lvls, _table, Devices, Cameras, \
+        _freq_calibration_file, _lvl_calibration_file
     # initialize devices
     if bool(device_list) == bool(default_mode):
         raise ValueError("You have to specify a device_list OR a default_mode")
@@ -56,12 +59,12 @@ def initialize_setup(setup, default_mode=None, device_list=None, zbus=True, conn
         _cameras = camera.initialize_cameras(camera_type)
     # get the correct speaker table and calibration files for the setup
     if setup == 'arc':
-        freq_calibration_file = DIR / 'data' / Path('frequency_calibration_arc.npy')
-        lvl_calibration_file = DIR / 'data' / Path('level_calibration_arc.npy')
+        _freq_calibration_file = DIR / 'data' / Path('frequency_calibration_arc.npy')
+        _lvl_calibration_file = DIR / 'data' / Path('level_calibration_arc.npy')
         table_file = DIR / 'data' / 'tables' / Path('speakertable_arc.txt')
     elif setup == 'dome':
-        freq_calibration_file = DIR / 'data' / Path('frequency_calibration_dome.npy')
-        lvl_calibration_file = DIR / 'data' / Path('level_calibration_dome.npy')
+        _freq_calibration_file = DIR / 'data' / Path('frequency_calibration_dome.npy')
+        _lvl_calibration_file = DIR / 'data' / Path('level_calibration_dome.npy')
         table_file = DIR / 'data' / 'tables' / Path('speakertable_dome.txt')
     else:
         raise ValueError("Unknown device! Use 'arc' or 'dome'.")
@@ -70,13 +73,13 @@ def initialize_setup(setup, default_mode=None, device_list=None, zbus=True, conn
     _table = pd.read_csv(table_file, dtype={"index_number": "Int64", "channel": "Int64", "analog_proc": "category",
                          "azi": float, "ele": float, "bit": "Int64", "digital_proc": "category"})
     logging.info('Speaker table loaded.')
-    if freq_calibration_file.exists():
-        _calibration_freqs = slab.Filter.load(freq_calibration_file)
+    if _freq_calibration_file.exists():
+        _calibration_freqs = slab.Filter.load(_freq_calibration_file)
         logging.info('Frequency-calibration filters loaded.')
     else:
         logging.warning('Setup not frequency-calibrated...')
-    if lvl_calibration_file.exists():
-        _calibration_lvls = np.load(lvl_calibration_file)
+    if _lvl_calibration_file.exists():
+        _calibration_lvls = np.load(_lvl_calibration_file)
         logging.info('Level-calibration loaded.')
     else:
         logging.warning('Setup not level-calibrated...')
@@ -202,8 +205,7 @@ def shift_setup(delta_azi, delta_ele):
     global _table
     _table.azi += delta_azi  # azimuth
     _table.ele += delta_ele  # elevation
-    logging.info("shifting the loudspeaker array by % s degree in azimuth / n"
-                 "and % s degree in elevation" % (delta_azi, delta[1]))
+    logging.info(f"shifting the loudspeaker array by {delta_azi} in azimuth and {delta_ele} in elevation")
 
 
 def set_signal_and_speaker(signal, speaker, apply_calibration=True):
@@ -304,6 +306,22 @@ def check_pose(fix=(0, 0), var=10):
 
 
 # functions implementing complete procedures:
+def play_start_sound(speaker=23):
+    """
+    Load and play the sound that signals the start and end of an experiment/block
+    """
+    start = slab.Sound.read(DIR/"data"/"sounds"/"start.wav").channel(0)
+    set_signal_and_speaker(signal=start, speaker=speaker)
+    play_and_wait()
+
+
+def play_warning_sound(duration=.5, speaker=23):
+    """
+    Load and play the sound that signals a warning (for example if the listener is in the wrong position)
+    """
+    warning = slab.Sound.clicktrain(duration=duration)
+    set_signal_and_speaker(signal=warning, speaker=speaker)
+    play_and_wait()
 
 
 def calibrate_camera(targets, n_reps=1, n_images=5):
@@ -353,107 +371,99 @@ def localization_test_freefield(targets, duration=0.5, n_reps=1, n_images=5, vis
     0 elevation and azimuth and press the button to indicate the next trial.
 
     Args:
-        targets (pandas DataFrame): rows from the speaker table.
+        targets : rows from the speaker table or index numbers of the speakers.
         duration (float): duration of the noise played from the target positions in seconds
         n_reps(int): number of repetitions for each target
         n_images(int): number of images taken for each head pose estimate
         visual(bool): If True, light a LED at the target position - the speakers must have a LED attached
     Returns:
-        pandas DataFrame: camera and world coordinates acquired (calibration is performed automatically)
+        instance of slab.Trialsequence: the response is stored in the data attribute as tuples with (azimuth, elevation)
     """
-    if not isinstance(Cameras, camera.Cameras) or Cameras.calibration is not None:
+    if not isinstance(Cameras, camera.Cameras) and Cameras.calibration is not None:
         raise ValueError("Camera must be initialized and calibrated before localization test!")
     if not Devices.mode == "loctest_freefield":
         Devices.initialize_default(mode="loctest_freefield")
-    warning = slab.Sound.clicktrain(duration=duration)
     Devices.write(tag="playbuflen", value=int(slab.signal._default_samplerate*duration), procs=["RX81", "RX82"])
     if visual is True:
         if targets.bit.isnull.sum():
             raise ValueError("All speakers must have a LED attached for a test with visual cues")
-    speakers = [targets.loc[i] for i in targets.index]
-    seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
-    start = slab.Sound.read(DIR/"data"/"sounds"/"start.wav").channel(0)
-    set_signal_and_speaker(signal=start, speaker=23)
-    play_and_wait()
+    targets = [targets.loc[i] for i in targets.index]  # make list from data frame
+    seq = slab.Trialsequence(targets, n_reps, kind="non_repeating")
+    play_start_sound()
     for trial in seq:
         wait_for_button()
         while check_pose(fix=[0, 0]) is None:  # check if head is in position
-            set_signal_and_speaker(signal=warning, speaker=23)
-            play_and_wait_for_button()
+            play_warning_sound()
+            wait_for_button()
         sound = slab.Sound.pinknoise(duration=duration)
         set_signal_and_speaker(signal=sound, speaker=trial.index_number)
-        if visual is True:  # turn LED on
-            Devices.write(tag="bitmask", value=trial.bit, procs=trial.digital_proc)
-        play_and_wait_for_button()
-        pose = Cameras.get_headpose(convert=True, average=True, n=n_images)
-        if visual is True:  # turn LED off
-            Devices.write(tag="bitmask", value=0, procs=trial.digital_proc)
-        seq.add_response(pose)
-    set_signal_and_speaker(signal=start, speaker=23)  # play sound to signal end
-    play_and_wait()
+        seq = _loctest_trial(trial, seq, visual, n_images)
+    play_start_sound()
     return seq
 
 
-def localization_test_headphones(speakers, n_reps=1, visual=False):
-    if not isinstance(Cameras, camera.Cameras) or Cameras.calibration is not None:
+def localization_test_headphones(targets, signals, n_reps=1, n_images=5, visual=False):
+    """
+    Run a basic localization test where previously recorded/generated binaural sound are played via headphones.
+    The procedure is the same as in localization_test_freefield().
+
+    Args:
+        targets : rows from the speaker table or index numbers of the speakers.
+        signals (array-like) : binaural sounds that are played. Must be ordered corresponding to the targets (first
+            element of signals is played for the first row of targets etc.). If the elements of signals are
+            instances of slab.Precomputed, a random one is drawn in each trial (useful if you don't want to repeat
+            the exact same sound in each trial)
+        n_reps(int): number of repetitions for each target
+        n_images(int): number of images taken for each head pose estimate
+        visual(bool): If True, light a LED at the target position - the speakers must have a LED attached
+    Returns:
+        instance of slab.Trialsequence: the response is stored in the data attribute as tuples with (azimuth, elevation)
+    """
+
+    if not isinstance(Cameras, camera.Cameras) and Cameras.calibration is not None:
         raise ValueError("Camera must be initialized and calibrated before localization test!")
     if not Devices.mode == "loctest_headphones":
-        Devices.initialize_default(mode="loctest_freefield")
-    folder = Path(folder)
-    if not folder.exists():
-        raise ValueError("Folder does not exist!")
-    else:
-        if not _mode == "localization_test_headphones":
-            initialize_devices(mode="localization_test_headphones")
-        speakers = speakers_from_list(speakers)
-        seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
-    if visual is True:  # check if speakers have a LED
-        if any(np.isnan([s[-1] for s in speakers])):
-            raise ValueError("At least one of the selected speakers does not have a LED attached!")
-    if camera._cal is None:
-        raise ValueError("Camera must be calibrated before localization test!")
-    response = _response.copy()
-    # play start signal :
-    set_variable(variable="playbuflen", value=_signal.nsamples, proc="RP2")
-    set_variable(variable="data_l", value=_signal.data.flatten(), proc="RP2")
-    set_variable(variable="data_r", value=_signal.data.flatten(), proc="RP2")
-    trigger()
-    # wait for button press to start the sequence
-    while not get_variable(variable="response", proc="RP2"):
-        time.sleep(0.01)
-    for trial in seq:  # loop trough trial sequence
-        _, _, _, azi, ele, bit, proc_bit = trial
-        trial = {"azi_target": azi, "ele_target": ele}
-        file = Path(np.random.choice(glob.glob(str(folder / ("*azi%s_ele%s*" % (azi, ele))))))
-        sound = slab.Binaural(slab.Sound(file))
+        Devices.initialize_default(mode="loctest_headphones")
+    if not len(signals) == len(targets):
+        raise ValueError("There must be one signal for each target!")
+    if visual is True:
+        if targets.bit.isnull.sum():
+            raise ValueError("All speakers must have a LED attached for a test with visual cues")
+    targets = [targets.loc[i] for i in targets.index]  # make list from data frame
+    seq = slab.Trialsequence(targets, n_reps, kind="non_repeating")
+    play_start_sound()
+    for trial in seq:
+        signal = signals[trial.index_number]  # get the signal corresponding to the target
+        if isinstance(signal, slab.Precomputed):  # if signal is precomputed, pick a random one
+            signal = signal[np.random.randint(len(signal))]
+        try:
+            signal = slab.Binaural(signal)
+        except IndexError:
+            logging.warning("Binaural sounds must have exactly two channels!")
+        wait_for_button()
+        while check_pose(fix=[0, 0]) is None:  # check if head is in position
+            play_warning_sound()
+            wait_for_button()
         # write sound into buffer
-        set_variable(variable="playbuflen", value=sound.nsamples, proc="RP2")
-        set_variable(variable="data_l", value=sound.left.data.flatten(), proc="RP2")
-        set_variable(variable="data_r", value=sound.right.data.flatten(), proc="RP2")
-        if visual is True:  # turn on the LED
-            set_variable(variable="bitmask", value=bit, proc=proc_bit)
-        trigger()
-        # wait for response, then estimate the headpose
-        while not get_variable(variable="response", proc="RP2"):
-            time.sleep(0.01)
-        ele, azi = camera.get_headpose(convert=True, average=True, target=(azi, ele))
-        if visual is True:  # turn of the LED
-            set_variable(variable="bitmask", value=0, proc=proc_bit)
-        # append response
-        trial["azi_response"], trial["ele_response"] = azi, ele
-        response = response.append(trial, ignore_index=True)
-        # wait till head is back in position, send warning if not
-        head_in_position = False
-        while not head_in_position:
-            while not get_variable(variable="response", proc="RP2"):
-                time.sleep(0.01)
-            head_in_position = check_pose()
-    # play sound to signal end
-    set_variable(variable="playbuflen", value=_signal.nsamples, proc="RP2")
-    set_variable(variable="data_l", value=_signal.data.flatten(), proc="RP2")
-    set_variable(variable="data_r", value=_signal.data.flatten(), proc="RP2")
-    trigger()
-    return response
+        Devices.write(tag="playbuflen", value=signal.nsamples, procs="RP2")
+        Devices.write(tag="data_l", value=signal.left.data.flatten(), procs="RP2")
+        Devices.write(tag="data_r", value=signal.right.data.flatten(), procs="RP2")
+        seq = _loctest_trial(trial, seq, visual, n_images)
+    play_start_sound()
+    return seq
+
+
+def _loctest_trial(trial, seq, visual, n_images):
+    """do a single trial in a localization test experiment: turn on LED (optional), play and wait for button press,
+     get head pose, turn led of, write response in trial sequence and return the sequence"""
+    if visual is True:  # turn LED on
+        Devices.write(tag="bitmask", value=trial.bit, procs=trial.digital_proc)
+    play_and_wait_for_button()
+    pose = Cameras.get_headpose(convert=True, average=True, n=n_images)
+    if visual is True:  # turn LED off
+        Devices.write(tag="bitmask", value=0, procs=trial.digital_proc)
+    seq.add_response(pose)
+    return seq
 
 
 def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1 / 10,
@@ -461,28 +471,26 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1 / 10,
     """
     Equalize the loudspeaker array in two steps. First: equalize over all
     level differences by a constant for each speaker. Second: remove spectral
-    differeces by inverse filtering. Argument exlude can be a list of speakers that
+    difference by inverse filtering. Argument exlude can be a list of speakers that
     will be excluded from the frequency equalization. For more details on how the
     inverse filters are computed see the documentation of slab.Filter.equalizing_filterbank
     """
-    # TODO: check filter shift compensation
     global _calibration_freqs, _calibration_lvls
-    printv('Starting calibration.')
-    if not _mode == "play_and_record":
-        initialize_devices(mode="play_and_record")
-    sig = slab.Sound.chirp(duration=0.05, from_freq=low_cutoff, to_freq=high_cutoff)
-    sig.level = 95
+    logging.info('Starting calibration.')
+    if not Devices.mode == "play_rec":
+        Devices.initialize_default(mode="play_and_record")
+    sig = slab.Sound.chirp(duration=0.05, from_frequency=low_cutoff, to_frequency=high_cutoff)
     if speakers == "all":  # use the whole speaker table
         speaker_list = _table
     else:  # use a subset of speakers
-        speaker_list = speakers_from_list(speakers)
+        speaker_list = get_speaker_list(speakers)
     _calibration_lvls = _level_equalization(sig, speaker_list, target_speaker)
-    fbank, rec = _frequency_equalization(
+    filter_bank, rec = _frequency_equalization(
         sig, speaker_list, target_speaker, bandwidth, low_cutoff, high_cutoff, alpha, exclude)
-    if plot:  # save plot for each speaker
-        for i in range(rec.nchannels):
-            _plot_equalization(target_speaker, rec.channel(i),
-                               fbank.channel(i), i)
+    # if plot:  # save plot for each speaker
+    #     for i in range(rec.nchannels):
+    #         _plot_equalization(target_speaker, rec.channel(i),
+    #                            fbank.channel(i), i)
 
     if _freq_calibration_file.exists():
         date = datetime.datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")

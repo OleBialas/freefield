@@ -39,7 +39,7 @@ def test_shift_setup():
         index_number = np.random.randint(0, 47)
         pre_shift = main.get_speaker(index_number=index_number)
         delta = (np.round(np.random.uniform(-10, 10), 2), np.round(np.random.uniform(-10, 10), 2))
-        main.shift_setup(delta=delta)
+        main.shift_setup(delta_azi=delta[0], delta_ele=delta[1])
         post_shift = main.get_speaker(index_number=index_number)
         assert (post_shift.azi.iloc[0] - pre_shift.azi.iloc[0]).round(2) == delta[0]
         assert (post_shift.ele.iloc[0] - pre_shift.ele.iloc[0]).round(2) == delta[1]
@@ -75,6 +75,14 @@ def test_calibrate_camera():
 
 
 def test_localization_test_freefield():
-    speakers = main._table.head()
-    main.localization_test_freefield(speakers=speakers, duration=.8, n_reps=1, n_images=5, visual=False)
-    pass
+    targets = main._table.head()
+    seq = main.localization_test_freefield(targets=targets, duration=.8, n_reps=1, n_images=5, visual=False)
+    assert len(seq.trials) == len(seq.data)
+
+
+def test_localization_test_headphones():
+    targets = main._table.head()
+    signals = [slab.Precomputed(lambda: slab.Binaural([slab.Sound.pinknoise(), slab.Sound.pinknoise()]),
+                                n=10) for i in range(len(targets))]
+    seq = main.localization_test_headphones(targets=targets, signals=signals, n_reps=1, n_images=5, visual=False)
+    assert len(seq.trials) == len(seq.data)

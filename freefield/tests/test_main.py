@@ -121,3 +121,7 @@ class TestMainMethods(unittest.TestCase):
         main.initialize_setup(setup="dome", default_mode="play_rec", camera_type=None)
         assert self.assertAlmostEqual(calibration, main._calibration)
 
+def test_check_equialization():
+    signal = slab.Sound.whitenoise()
+    main.check_equalization(signal, speakers="all", max_diff=5, db_thresh=80)
+    pass

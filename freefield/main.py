@@ -199,7 +199,7 @@ def shift_setup(delta_azi, delta_ele):
     logging.info(f"shifting the loudspeaker array by {delta_azi} in azimuth and {delta_ele} in elevation")
 
 
-def set_signal_and_speaker(signal, speaker, apply_calibration=True):
+def set_signal_and_speaker(signal, speaker, calibrate=True):
     """
     Load a signal into the device buffer and set the output channel to match the speaker.
     The device is chosen automatically depending on the speaker.
@@ -207,31 +207,58 @@ def set_signal_and_speaker(signal, speaker, apply_calibration=True):
         Args:
             signal (array-like): signal to load to the buffer, must be one-dimensional
             speaker : speaker to play the signal from, can be index number or [azimuth, elevation]
-            apply_calibration (bool): if True (=default) apply loudspeaker equalization
+            calibrate (bool): if True (=default) apply loudspeaker equalization
     """
-
     signal = slab.Sound(signal)
-    if isinstance(speaker, list):
+    if isinstance(speaker, (list, tuple)):
         speaker = get_speaker(coordinates=speaker)
     elif isinstance(speaker, (int, np.int64, np.int32)):
         speaker = get_speaker(index_number=speaker)
+    elif isinstance(speaker, pd.Series):
+        pass
     else:
         raise ValueError(f"Input {speaker} for argument speaker is not valid! \n"
                          "Specify either an index number or coordinates of the speaker!")
-    to_play = deepcopy(signal)  # copy the signal so the original is not changed
-    if apply_calibration:
-        if not bool(_calibration):
-            logging.warning("Setup is not calibrated!")
-        else:
-            logging.info('Applying calibration.')  # apply level and frequency calibration
-            speaker_calibration = _calibration[str(speaker.index_number)]
-            to_play.level *= speaker_calibration["level"]
-            to_play = speaker_calibration["filter"].apply(to_play)
+    if calibrate:
+        logging.info('Applying calibration.')  # apply level and frequency calibration
+        to_play = apply_calibration(signal, speaker)
+    else:
+        to_play = signal
     Devices.write(tag='chan', value=speaker.channel.iloc[0], procs=speaker.analog_proc)
     Devices.write(tag='data', value=to_play.data, procs=speaker.analog_proc)
     other_procs = list(_table["analog_proc"].unique())
     other_procs.remove(speaker.analog_proc.iloc[0])  # set the analog output of other procs to non existent number 99
     Devices.write(tag='chan', value=99, procs=speaker.analog_proc)
+
+
+def apply_calibration(signal, speaker, level=True, frequency=True):
+    """
+    Apply level correction and frequency equalization to a signal
+
+    Args:
+        signal: signal to calibrate
+        speaker: index number, coordinates or row from the speaker table. Determines which calibration is used
+    Returns:
+        slab.Sound: calibrated copy of signal
+    """
+    if not bool(_calibration):
+        logging.warning("Setup is not calibrated! Returning the signal unchanged...")
+        return signal
+    else:
+        signal = slab.Sound(signal)
+        if isinstance(speaker, (int, np.int64, np.int32)):
+            speaker = get_speaker(index_number=speaker)
+        elif isinstance(speaker, (list, tuple)):
+            speaker = get_speaker(coordinates=speaker)
+        elif not isinstance(speaker, (pd.Series, pd.DataFrame)):
+            raise ValueError("Argument speaker must be a index number, coordinates or table row of a speaker!")
+        speaker_calibration = _calibration[str(speaker.index_number.iloc[0])]
+        calibrated_signal = deepcopy(signal)
+        if level:
+            calibrated_signal.level *= speaker_calibration["level"]
+        if frequency:
+            calibrated_signal = speaker_calibration["filter"].apply(calibrated_signal)
+        return calibrated_signal
 
 
 def get_recording_delay(distance=1.6, sample_rate=48828, play_device=None, rec_device=None):
@@ -302,7 +329,7 @@ def play_start_sound(speaker=23):
     """
     Load and play the sound that signals the start and end of an experiment/block
     """
-    start = slab.Sound.read(DIR/"data"/"sounds"/"start.wav").channel(0)
+    start = slab.Sound.read(DIR/"data"/"sounds"/"start.wav")
     set_signal_and_speaker(signal=start, speaker=speaker)
     play_and_wait()
 
@@ -541,7 +568,7 @@ def _frequency_equalization(sig, speaker_list, target_speaker, calibration_lvls,
     return filter_bank, rec
 
 
-def test_equalization(sig, speakers="all", max_diff=5):
+def check_equalization(sig, speakers="all", max_diff=5, db_thresh=80):
     """
     Test the effectiveness of the speaker equalization
     """
@@ -550,20 +577,20 @@ def test_equalization(sig, speakers="all", max_diff=5):
     rec_raw, rec_lvl_eq, rec_freq_eq = [], [], []
     if speakers == "all":  # use the whole speaker table
         speaker_list = _table
-    else:  # use a subset of speakers
-        speaker_list = speakers_from_list(speakers)
-    for row in speaker_list:
-        sig2 = deepcopy(sig)
-        rec_raw.append(play_and_record(row[0], sig2))
-        sig2.level *= _calibration_lvls[int(row[0])]
-        rec_lvl_eq.append(play_and_record(row[0], sig2))
-        sig2 = _calibration_freqs.channel(int(row[0])).apply(sig2)
-        # rec_freq_eq.append(play_and_record(row[0], sig2))
-        # this should do the same thing:
-        rec_freq_eq.append(play_and_record(row[0], sig, apply_calibration=True))
+    elif isinstance(speakers, list):  # use a subset of speakers
+        speaker_list = get_speaker_list(speakers)
+    else:
+        raise ValueError("Speakers must be 'all' or a list of indices/coordinates!")
+    for i in range(speaker_list.shape[0]):
+        row = speaker_list.loc[i]
+        sig2 = apply_calibration(sig, speaker=row.index_number, level=True, frequency=False)  # only level equalization
+        sig3 = apply_calibration(sig, speaker=row.index_number, level=True, frequency=True)  # level and frequency
+        rec_raw.append(play_and_record(row.index_number, sig, calibrate=False))
+        rec_lvl_eq.append(play_and_record(row.index_number, sig2, calibrate=False))
+        rec_freq_eq.append(play_and_record(row.index_number, sig3, calibrate=False))
     for i, rec in enumerate([rec_raw, rec_lvl_eq, rec_freq_eq]):
         rec = slab.Sound(rec)
-        rec.data = rec.data[:, rec.level > _rec_tresh]
+        rec.data = rec.data[:, rec.level > db_thresh]
         rec.spectrum(axes=ax[i, 0], show=False)
         spectral_range(rec, plot=ax[i, 1], thresh=max_diff, log=False)
     plt.show()
@@ -616,18 +643,7 @@ def spectral_range(signal, bandwidth=1 / 5, low_cutoff=50, high_cutoff=20000, th
     return difference
 
 
-def binaural_recording(sound, speaker_nr, compensate_delay=True, apply_calibration=True):
-    if _mode != "binaural_recording":
-        initialize_devices(mode="binaural_recording")
-    level = sound.level
-    rec = play_and_record(speaker_nr, sound, compensate_delay, apply_calibration)
-    iid = rec.left.level - rec.right.level
-    rec.level = level  # correct for level attenuation
-    rec.left.level += iid  # keep interaural intensity difference
-    return rec
-
-
-def play_and_record(speaker_nr, sig, compensate_delay=True, apply_calibration=False):
+def play_and_record(speaker_nr, sig, compensate_delay=True, compensate_level=True, calibrate=False):
     """
     Play the signal from a speaker and return the recording. Delay compensation
     means making the buffer of the recording device n samples longer and then
@@ -645,7 +661,7 @@ def play_and_record(speaker_nr, sig, compensate_delay=True, apply_calibration=Fa
     if Devices.mode == "play_birec":
         binaural = True  # 2 channel recording
     elif Devices.mode == "play_rec":
-        binaural = False  # record single channle
+        binaural = False  # record single channel
     else:
         raise ValueError("Setup must be initialized in mode 'play_rec' or 'play_birec'!")
     Devices.write(tag="playbuflen", value=sig.nsamples, procs=["RX81", "RX82"])
@@ -656,7 +672,7 @@ def play_and_record(speaker_nr, sig, compensate_delay=True, apply_calibration=Fa
         n_delay = 0
     Devices.write(tag="playbuflen", value=sig.nsamples, procs=["RX81", "RX82"])
     Devices.write(tag="playbuflen", value=sig.nsamples + n_delay, procs="RP2")
-    set_signal_and_speaker(sig, speaker_nr, apply_calibration)
+    set_signal_and_speaker(sig, speaker_nr, calibrate)
     play_and_wait()
     if binaural is False:  # read the data from buffer and skip the first n_delay samples
         rec = Devices.read(tag='data', proc='RP2', n_samples=sig.nsamples + n_delay)[n_delay:]
@@ -665,4 +681,12 @@ def play_and_record(speaker_nr, sig, compensate_delay=True, apply_calibration=Fa
         rec_l = Devices.read(tag='datal', proc='RP2', n_samples=sig.nsamples + n_delay)[n_delay:]
         rec_r = Devices.read(tag='datar', proc='RP2', n_samples=sig.nsamples + n_delay)[n_delay:]
         rec = slab.Binaural([rec_l, rec_r])
+    if compensate_level:
+        if binaural:
+            iid = rec.left.level - rec.right.level
+            rec.level = sig.level
+            rec.left.level += iid
+        else:
+            rec.level = sig.level
     return rec
+

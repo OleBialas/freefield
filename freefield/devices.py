@@ -61,7 +61,7 @@ class Devices(object):
         for name, model, circuit in device_list:
             # advance index if a model appears more then once
             models.append(model)
-            index = Counter(models)[model] -1
+            index = Counter(models)[model]
             print(f"initializing {name} of type {model} with index {index}")
             self.procs[name] = self._initialize_proc(model, circuit,
                                                      connection, index)

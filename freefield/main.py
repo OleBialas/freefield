@@ -13,7 +13,7 @@ from freefield import DIR
 from freefield import Devices as Devs
 import logging
 
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(level=logging.INFO)
 slab.Signal.set_default_samplerate(48828)  # default samplerate for generating sounds, filters etc.
 # Initialize global variables:
 Cameras = None
@@ -689,4 +689,3 @@ def play_and_record(speaker_nr, sig, compensate_delay=True, compensate_level=Tru
         else:
             rec.level = sig.level
     return rec
-

@@ -241,7 +241,7 @@ class Devices(object):
     def _initialize_proc(model: str, circuit: str, connection: str, index: int):
         if _win:
             try:
-                rp = win32com.client
+                rp = win32com.client.Dispatch('RPco.X')
             except win32com.client.pythoncom.com_error as err:
                 raise ValueError(err)
         else:

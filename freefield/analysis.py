@@ -1,6 +1,28 @@
 import numpy as np
 from scipy import stats
+import pandas as pd
+from slab import Trialsequence
 
+def get_loctest_data(sequence):
+    """
+    Extract the data from a trialsequence and return them in a data frame. The trialsequence must be in the same format
+    that is returned by the localization test functions in the main module. This means that every element in the
+    conditions attribute must be an entry of the speaker table (pandas series) and every element of the data attribute
+    must be a tuple with (azimuth, elevation) of the subjects response in that trial.
+    Args:
+        sequence (instance of slab.Trialsequence): the sequence containing the targets and response data
+    Returns:
+        pandas DataFrame: target and response coordinates
+    """
+    if not isinstance(sequence, Trialsequence):
+        raise ValueError("Input must be slab trialsequence!")
+    data = pd.DataFrame(columns=["azi_target", "ele_target", "azi_response", "ele_response"])
+    for trial, response in zip(sequence.trials, sequence.data):
+        target = sequence.conditions[trial-1]
+        row = {"azi_target": target.azi, "ele_target": target.ele,
+               "azi_response": response[0], "ele_response": response[1]}
+        data = data.append(row, ignore_index=True)
+    return data
 
 def mean_dir(data, speaker):
     # use vector addition with uncorrected angles:
@@ -10,10 +32,6 @@ def mean_dir(data, speaker):
     idx = np.where(data[:,1] == speaker)
     return data[idx,2:4].mean(axis=1)
 
-def std(data, speaker):
-    'The vertical and horizontal variance of individual responses was quantified by computing the SD of response angles for each target direction and then taking the mean across directions.'
-    idx = np.where(data[:,1] == speaker)
-    return data[idx,2:4].std(axis=1)
 
 def mad(data, speaker, ref_dir=None):
     'Mean absolute difference between reference directions and pointed directions'

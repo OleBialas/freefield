@@ -3,18 +3,10 @@ Freefield: A Toolbox for Conducting Psychoacoustic Experiments
 
 Freefield is the software we are using to run psychoacoustical experiments (mostly concerning spatial hearing) at the
 university of Leipzig. The name is a term from the field of acoustics and describes a situation where no sound reflections occur.
-While the code is tailored to our experimental setup, some elements (e.g. handling TDT device, head pose estimation) might have broader applicability.
 
-The Setup
----------
-Our setup consists of an arc and a dome shaped array of 48 loudspeakers in a anechoic chamber. The loudspeakers are driven
-by two RX8 real time processors from Tucker Davis Technologies (TDT).
-
-Installation
-------------
 
 .. toctree::
-  :caption: Contents
+  :caption: **Contents**
   :maxdepth: 2
   :titlesonly:
 

@@ -1,0 +1,16 @@
+Welcome to freefield's documentation!
+=====================================
+
+.. toctree::
+  :caption: Contents
+  :maxdepth: 2
+  :titlesonly:
+
+  introduction
+  loctest
+  equalization
+
+
+**Index of functions and classes:** :ref:`genindex`
+
+**Search the documentation:** :ref:`search`

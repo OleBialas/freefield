@@ -4,6 +4,9 @@ freefield/__pycache__/
 freefield/tests/__pycache__/
 /.idea
 /log/
+docs/_build
+docs/_static
+docs/_templates
 freefield/level_calibration_dome.npy
 freefield/frequency_calibration_dome.npy
 *.npy

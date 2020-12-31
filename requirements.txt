@@ -7,3 +7,4 @@ matplotlib
 pillow
 scipy
 git+git://github.com/DrMarc/soundlab.git
+insegel

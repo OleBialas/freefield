@@ -16,12 +16,23 @@ Installation
 First of all, you need to have Python (version >= 3.6) installed. If you don't have it yet, I recommend taking a look
 at the installation guide for the [Anaconda](https://docs.anaconda.com/anaconda/install/ "Install Anaconda")) distribution.
 
-Now you can install this package from github by typing:\
-`pip install git+https://github.com/OleBialas/freefield.git`
-In the same way, you can install slab, another package from our lab which this package depends on:\
-`pip install git+https://github.com/DrMarc/soundlab.git`
-All other dependencies can be installed using pip as well:\
-`pip install tensorflow opencv-python numpy setuptools pandas matplotlib pillow scipy`
+Now you can install this package from github by typing:
+
+.. code-block:: bash
+
+  pip install git+https://github.com/OleBialas/freefield.git
+
+In the same way, you can install slab, another package from our lab which this package depends on:
+
+.. code-block:: bash
+
+  pip install git+https://github.com/DrMarc/soundlab.git
+
+All other dependencies can be installed using pip as well:
+
+.. code-block:: bash
+
+  pip install tensorflow opencv-python numpy setuptools pandas matplotlib pillow scipy
 
 If you are only interested in playing around with the code, this is already sufficient and you can head
 to the getting started section. However, if you want to use the experimental setup (only possible on a Windows machine)
@@ -43,7 +54,9 @@ Unpack the .zip file and select the folder. There should be a file inside that e
 Getting Startet
 ---------------
 If the installation has worked out you should be able to import the package and initialize the setup
+
 .. code-block:: python
+
   import freefield
   freefield.main.initialize_setup(setup="dome", default_mode="play_rec", camera_type="web")
 

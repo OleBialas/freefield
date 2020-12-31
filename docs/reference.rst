@@ -7,9 +7,8 @@ Reference documentation
 
 .. note:: This reference documentation is auto-generated from the doc strings in the module. For a detailed description of the functionalities see the other sections.
 
-Sounds
-^^^^^^
-Inherits from :class:`slab.Signal`.
+main
+^^^^
 
 .. autoclass:: Sound
    :members:
@@ -57,15 +56,3 @@ Psychoacoustic procedures
 
 .. automethod:: slab.psychoacoustics.load_config
 
-
-Filters
--------
-.. autoclass:: Filter
-   :members:
-   :member-order: bysource
-
-HRTFs
------
-.. autoclass:: HRTF
-   :members:
-   :member-order: bysource

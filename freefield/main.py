@@ -6,11 +6,9 @@ import slab
 import pickle
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
-from freefield import camera
 import pandas as pd
 import datetime
-from freefield import DIR
-from freefield import Processors
+from freefield import DIR, Processors, camera
 import logging
 logging.basicConfig(level=logging.INFO)
 slab.Signal.set_default_samplerate(48828)  # default samplerate for generating sounds, filters etc.

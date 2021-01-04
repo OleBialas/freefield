@@ -27,26 +27,26 @@ class Processors(object):
         self.mode = None
         self._zbus = None
 
-    def initialize(self, device_list, zbus=False, connection='GB'):
+    def initialize(self, proc_list, zbus=False, connection='GB'):
         """
         Establish connection to one or several TDT-processors.
 
-        Initialize the processors listed in device_list, which can be a list
+        Initialize the processors listed in proc_list, which can be a list
         or list of lists. The list / each sublist contains the name and model
-        of a device as well as the path to an rcx-file with the circuit that is
-        run on the device. Elements must be in order name - model - circuit.
+        of a processor as well as the path to an rcx-file with the circuit that is
+        run on the processor. Elements must be in order name - model - circuit.
         If zbus is True, initialize the ZBus-interface. If the processors are
         already initialized they are reset
 
         Args:
-            device_list : each sub-list represents one
-                device. Contains name, model and circuit in that order
+            proc_list : each sub-list represents one
+                processor. Contains name, model and circuit in that order
             zbus : if True, initialize the Zbus interface.
-            connection: type of connection to device, can be "GB" (optical) or "USB"
+            connection: type of connection to processor, can be "GB" (optical) or "USB"
 
         Examples:
         #    >>> devs = Processors()
-        #    >>> # initialize a device of model 'RP2', named 'RP2' and load
+        #    >>> # initialize a processor of model 'RP2', named 'RP2' and load
         #    >>> # the circuit 'example.rcx'. Also initialize ZBus interface:
         #    >>> devs.initialize_processors(['RP2', 'RP2', 'example.rcx'], True)
         #    >>> # initialize two processors of model 'RX8' named 'RX81' and 'RX82'
@@ -56,7 +56,7 @@ class Processors(object):
         # TODO: check if names are unique and id rcx files do exist
         logging.info('Initializing TDT processors, this may take a moment ...')
         models = []
-        for name, model, circuit in device_list:
+        for name, model, circuit in proc_list:
             # advance index if a model appears more then once
             models.append(model)
             index = Counter(models)[model]
@@ -73,7 +73,7 @@ class Processors(object):
         Initialize processors in a default configuration.
 
         This function provides a convenient wrapper for initialize_processors.
-        depending on the mode, device names and models and rcx files are chosen
+        depending on the mode, processor names and models and rcx files are chosen
         and initialize_processors is called. The modes cover the core functions
         of the toolbox and include:
 
@@ -87,35 +87,35 @@ class Processors(object):
             mode (str): default configuration for initializing processors
         """
         if mode.lower() == 'play_rec':
-            device_list = [('RP2', 'RP2',  DIR/'data'/'rcx'/'rec_buf.rcx'),
-                           ('RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'),
-                           ('RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx')]
+            proc_list = [['RP2', 'RP2',  DIR/'data'/'rcx'/'rec_buf.rcx'],
+                         ['RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'],
+                         ['RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx']]
         elif mode.lower() == "play_birec":
-            device_list = [('RP2', 'RP2',  DIR/'data'/'rcx'/'bi_rec_buf.rcx'),
-                           ('RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'),
-                           ('RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx')]
+            proc_list = [['RP2', 'RP2',  DIR/'data'/'rcx'/'bi_rec_buf.rcx'],
+                         ['RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'],
+                         ['RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx']]
         elif mode.lower() == "loctest_freefield":
-            device_list = [('RP2', 'RP2',  DIR/'data'/'rcx'/'button.rcx'),
-                           ('RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'),
-                           ('RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx')]
+            proc_list = [['RP2', 'RP2',  DIR/'data'/'rcx'/'button.rcx'],
+                         ['RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'],
+                         ['RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx']]
         elif mode.lower() == "loctest_headphones":
-            device_list = [('RP2', 'RP2',  DIR/'data'/'rcx'/'bi_play_buf.rcx'),
-                           ('RX81', 'RX8', DIR/'data'/'rcx'/'bits.rcx'),
-                           ('RX82', 'RX8', DIR/'data'/'rcx'/'bits.rcx')]
+            proc_list = [['RP2', 'RP2',  DIR/'data'/'rcx'/'bi_play_buf.rcx'],
+                         ['RX81', 'RX8', DIR/'data'/'rcx'/'bits.rcx'],
+                         ['RX82', 'RX8', DIR/'data'/'rcx'/'bits.rcx']]
         elif mode.lower() == "cam_calibration":
-            device_list = [('RP2', 'RP2',  DIR/'data'/'rcx'/'button.rcx'),
-                           ('RX81', 'RX8', DIR/'data'/'rcx'/'bits.rcx'),
-                           ('RX82', 'RX8', DIR/'data'/'rcx'/'bits.rcx')]
+            proc_list = [['RP2', 'RP2',  DIR/'data'/'rcx'/'button.rcx'],
+                           ['RX81', 'RX8', DIR/'data'/'rcx'/'bits.rcx'],
+                           ['RX82', 'RX8', DIR/'data'/'rcx'/'bits.rcx']]
         else:
             raise ValueError(f'mode {mode} is not a valid input!')
         self.mode = mode
         logging.info(f'set mode to {mode}')
-        self.initialize(device_list, True, "GB")
+        self.initialize(proc_list, True, "GB")
 
     def write(self, tag: Union[str, list], value: Union[int, float, list],
               procs: Union[str, list]) -> int:
         """
-        Write data to device(s).
+        Write data to processor(s).
 
         Set a tag on one or multiple processors to a given value. Processors
         are addressed by their name (the key in the _procs dictionary). The same
@@ -135,7 +135,7 @@ class Processors(object):
                 written to
             value : value that is written to the tag. Must
                 match the data type of the tag.
-            procs : name(s) of the device(s) to write to
+            procs : name(s) of the processor(s) to write to
         Examples:
         #    >>> # set the value of tag 'data' to array data on RX81 & RX82 and
         #    >>> # set the value of tag 'x' to 0 on RP2 :
@@ -171,7 +171,7 @@ class Processors(object):
 
     def read(self, tag: str, proc: str, n_samples: int = 1):
         """
-        Read data from device.
+        Read data from processor.
 
         Get the value of a tag from a processor. The number of samples to read
         must be specified, default is 1 which means reading a single float or
@@ -179,9 +179,9 @@ class Processors(object):
         in one call of the function is not supported.
 
         Args:
-            tag: name of the device to write to
+            tag: name of the processor to write to
             proc: processor to read from
-            n_samples: number of samples to read from device, default=1
+            n_samples: number of samples to read from processor, default=1
         Returns:
             type (int, float, list): value read from the tag
         """
@@ -211,7 +211,7 @@ class Processors(object):
         Use software or the zBus-interface (must be initialized) to send
         a trigger to processors. The zBus triggers are send to
         all processors by definition. For the software triggers, once has to
-        specify the device(s).
+        specify the processor(s).
 
         Args:
             kind (str, int): kind of trigger that is send. For zBus triggers

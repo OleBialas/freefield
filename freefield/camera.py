@@ -122,7 +122,6 @@ class FlirCams(Cameras):
         self.system = PySpin.System.GetInstance()
         self.cams = self.system.GetCameras()
         self.ncams = self.cams.GetSize()
-        self.imsize = self.acquire_images(n=1).shape[0:2]
         if self.ncams == 0:    # Finish if there are no cameras
             self.cams.Clear()  # Clear camera list before releasing system
             self.system.ReleaseInstance()  # Release system instance
@@ -131,6 +130,7 @@ class FlirCams(Cameras):
             for cam in self.cams:
                 cam.Init()  # Initialize camera
             logging.info(f"initialized {self.ncams} FLIR camera(s)")
+        self.imsize = self.acquire_images(n=1).shape[0:2]
 
     def acquire_images(self, n=1):
         if hasattr(self, "imsize"):
@@ -150,8 +150,7 @@ class FlirCams(Cameras):
                     not PySpin.IsReadable(node_acquisition_mode_continuous)):
                 raise ValueError(
                     'Unable to set acquisition to continuous, aborting...')
-            acquisition_mode_continuous = \
-                node_acquisition_mode_continuous.GetValue()
+            acquisition_mode_continuous = node_acquisition_mode_continuous.GetValue()
             node_acquisition_mode.SetIntValue(acquisition_mode_continuous)
             cam.BeginAcquisition()
         for i_image in range(n):
@@ -164,11 +163,13 @@ class FlirCams(Cameras):
                 image = image_result.Convert(
                     PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
                 image = image.GetNDArray()
+                image.setflags(write=1)
                 image_result.Release()
                 if image_data is not None:
                     image_data[:, :, i_image, i_cam] = image
                 else:
                     image_data = image
+        [cam.EndAcquisition() for cam in cams]
         return image_data
 
     def halt(self):

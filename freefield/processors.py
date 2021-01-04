@@ -27,7 +27,7 @@ class Processors(object):
         self.mode = None
         self._zbus = None
 
-    def initialize_processors(self, device_list, zbus=False, connection='GB'):
+    def initialize(self, device_list, zbus=False, connection='GB'):
         """
         Establish connection to one or several TDT-processors.
 
@@ -110,7 +110,7 @@ class Processors(object):
             raise ValueError(f'mode {mode} is not a valid input!')
         self.mode = mode
         logging.info(f'set mode to {mode}')
-        self.initialize_processors(device_list, True, "GB")
+        self.initialize(device_list, True, "GB")
 
     def write(self, tag: Union[str, list], value: Union[int, float, list],
               procs: Union[str, list]) -> int:

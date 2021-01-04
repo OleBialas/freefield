@@ -22,7 +22,7 @@ CALIBRATIONDICT = {}  # calibration to equalize levels
 TABLE = pd.DataFrame()  # numbers and coordinates of all loudspeakers
 
 
-def initialize_setup(setup, default_mode=None, device_list=None, zbus=True, connection="GB", camera_type="flir"):
+def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connection="GB", camera_type="flir"):
     """
     Initialize the processors and load table and calibration for setup.
 
@@ -35,7 +35,7 @@ def initialize_setup(setup, default_mode=None, device_list=None, zbus=True, conn
     Args:
         setup: determines which files to load, can be 'dome' or 'arc'
         default_mode: initialize the setup using one of the defaults, see Processors.initialize_default
-        device_list: if not using a default, specify the processors in a list, see processors.initialize_processors
+        proc_list: if not using a default, specify the processors in a list, see processors.initialize_processors
         zbus: whether or not to initialize the zbus interface
         connection: type of connection to processors, can be "GB" (optical) or "USB"
         camera_type: kind of camera that is initialized. Can be "webcam", "flir" or None
@@ -44,10 +44,10 @@ def initialize_setup(setup, default_mode=None, device_list=None, zbus=True, conn
     # TODO: put level and frequency equalization in one common file
     global CALIBRATIONDICT, CALIBRATIONFILE, TABLE, PROCESSORS, CAMERAS
     # initialize processors
-    if bool(device_list) == bool(default_mode):
-        raise ValueError("You have to specify a device_list OR a default_mode")
-    if device_list is not None:
-        PROCESSORS.initialize_processors(device_list, zbus, connection)
+    if bool(proc_list) == bool(default_mode):
+        raise ValueError("You have to specify a proc_list OR a default_mode")
+    if proc_list is not None:
+        PROCESSORS.initialize(proc_list, zbus, connection)
     elif default_mode is not None:
         PROCESSORS.initialize_default(default_mode)
     if camera_type is not None:
@@ -80,7 +80,7 @@ def wait_to_finish_playing(proc="all", tag="playback"):
 
     For this function to work, the rcx-circuit must have a tag that is 1
     while output is generated and 0 otherwise. The default name for this
-    kind of tag is "playback". "playback" is read repeatedly for each device
+    kind of tag is "playback". "playback" is read repeatedly for each processors
     followed by a short sleep if the value is 1.
 
     Args:
@@ -123,12 +123,12 @@ def get_speaker(index_number=None, coordinates=None):
 
     Returns:
         int: index number of the speaker (0 to 47)
-        int: channel of the device the speaker is attached to (1 to 24)
-        int: index of the device the speaker is attached to (1 or 2)
+        int: channel of the processor the speaker is attached to (1 to 24)
+        int: index of the processor the speaker is attached to (1 or 2)
         float: azimuth angle of the target speaker
         float: elevation angle of the target speaker
         int: integer value of the bitmask for the LED at speaker position
-        int: index of the device the LED is attached to (1 or 2)
+        int: index of the processor the LED is attached to (1 or 2)
     """
     row = pd.DataFrame()
     if (index_number is None and coordinates is None) or (index_number is not None and coordinates is not None):
@@ -199,8 +199,8 @@ def shift_setup(delta_azi, delta_ele):
 
 def set_signal_and_speaker(signal, speaker, calibrate=True):
     """
-    Load a signal into the device buffer and set the output channel to match the speaker.
-    The device is chosen automatically depending on the speaker.
+    Load a signal into the processor buffer and set the output channel to match the speaker.
+    The processor is chosen automatically depending on the speaker.
 
         Args:
             signal (array-like): signal to load to the buffer, must be one-dimensional
@@ -259,7 +259,7 @@ def apply_calibration(signal, speaker, level=True, frequency=True):
         return calibrated_signal
 
 
-def get_recording_delay(distance=1.6, sample_rate=48828, play_device=None, rec_device=None):
+def get_recording_delay(distance=1.6, sample_rate=48828, play_from=None, rec_from=None):
     """
         Calculate the delay it takes for played sound to be recorded. Depends
         on the distance of the microphone from the speaker and on the processors
@@ -268,28 +268,28 @@ def get_recording_delay(distance=1.6, sample_rate=48828, play_device=None, rec_d
         Args:
             distance (float): distance between listener and speaker array in meters
             sample_rate (int): sample rate under which the system is running
-            play_device (str): device used for digital to analog conversion
-            rec_device (str): device used for analog to digital conversion
+            play_from (str): processor used for digital to analog conversion
+            rec_from (str): processor used for analog to digital conversion
 
     """
     n_sound_traveling = int(distance / 343 * sample_rate)
-    if play_device:
-        if play_device == "RX8":
+    if play_from:
+        if play_from == "RX8":
             n_da = 24
-        elif play_device == "RP2":
+        elif play_from == "RP2":
             n_da = 30
         else:
-            logging.warning(f"dont know D/A-delay for device type {play_device}...")
+            logging.warning(f"dont know D/A-delay for processor type {play_from}...")
             n_da = 0
     else:
         n_da = 0
-    if rec_device:
-        if rec_device == "RX8":
+    if rec_from:
+        if rec_from == "RX8":
             n_ad = 47
-        elif rec_device == "RP2":
+        elif rec_from == "RP2":
             n_ad = 65
         else:
-            logging.warning(f"dont know A/D-delay for device type {rec_device}...")
+            logging.warning(f"dont know A/D-delay for processor type {rec_from}...")
             n_ad = 0
     else:
         n_ad = 0
@@ -644,7 +644,7 @@ def spectral_range(signal, bandwidth=1 / 5, low_cutoff=50, high_cutoff=20000, th
 def play_and_record(speaker_nr, sig, compensate_delay=True, compensate_level=True, calibrate=False):
     """
     Play the signal from a speaker and return the recording. Delay compensation
-    means making the buffer of the recording device n samples longer and then
+    means making the buffer of the recording processor n samples longer and then
     throwing the first n samples away when returning the recording so sig and
     rec still have the same legth. For this to work, the circuits rec_buf.rcx
     and play_buf.rcx have to be initialized on RP2 and RX8s and the mic must
@@ -664,7 +664,7 @@ def play_and_record(speaker_nr, sig, compensate_delay=True, compensate_level=Tru
         raise ValueError("Setup must be initialized in mode 'play_rec' or 'play_birec'!")
     PROCESSORS.write(tag="playbuflen", value=sig.nsamples, procs=["RX81", "RX82"])
     if compensate_delay:
-        n_delay = get_recording_delay(play_device="RX8", rec_device="RP2")
+        n_delay = get_recording_delay(play_from="RX8", rec_from="RP2")
         n_delay += 50  # make the delay a bit larger, just to be sure
     else:
         n_delay = 0

@@ -24,7 +24,7 @@ class TestMainMethods(unittest.TestCase):
         for i in range(47):
             speaker = main.get_speaker(index_number=i, coordinates=None)
             assert speaker.index_number.iloc[0] == i
-        for azi, ele in zip(main._table.azi, main._table.ele):
+        for azi, ele in zip(main.TABLE.azi, main.TABLE.ele):
             speaker = main.get_speaker(coordinates=[azi, ele])
             assert speaker.azi.iloc[0] == azi
             assert speaker.ele.iloc[0] == ele
@@ -60,7 +60,7 @@ class TestMainMethods(unittest.TestCase):
     def test_get_recording_delay(self):
         delay = main.get_recording_delay()
         assert delay == 227
-        delay = main.get_recording_delay(play_device="RX8", rec_device="RP2")
+        delay = main.get_recording_delay(play_from="RX8", rec_from="RP2")
         assert delay == 316
 
     def test_check_pose(self):
@@ -72,12 +72,12 @@ class TestMainMethods(unittest.TestCase):
         coords = main.calibrate_camera(targets, n_reps=1, n_images=1)
 
     def test_localization_test_freefield(self):
-        targets = main._table.head()
+        targets = main.TABLE.head()
         seq = main.localization_test_freefield(targets=targets, duration=.8, n_reps=1, n_images=5, visual=False)
         assert len(seq.trials) == len(seq.data)
 
     def test_localization_test_headphones(self):
-        targets = main._table.head()
+        targets = main.TABLE.head()
         signals = [slab.Precomputed(lambda: slab.Binaural([slab.Sound.pinknoise(), slab.Sound.pinknoise()]),
                                     n=10) for i in range(len(targets))]
         seq = main.localization_test_headphones(targets=targets, signals=signals, n_reps=1, n_images=5, visual=False)
@@ -91,7 +91,7 @@ class TestMainMethods(unittest.TestCase):
 
     def test_level_equalization(self):
         signal = slab.Sound.chirp(duration=0.05, from_frequency=100, to_frequency=20000)
-        speaker_list = main._table
+        speaker_list = main.TABLE
         target_speaker = 23
         db_thresh = 80
         lvls = main._level_equalization(signal, speaker_list, target_speaker, db_thresh)
@@ -100,7 +100,7 @@ class TestMainMethods(unittest.TestCase):
 
     def test_frequency_equalization(self):
         signal = slab.Sound.chirp(duration=0.05, from_frequency=100, to_frequency=20000)
-        speaker_list = main._table
+        speaker_list = main.TABLE
         target_speaker = 23
         db_thresh = 80
         bandwidth = 1 / 10

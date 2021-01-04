@@ -12,32 +12,30 @@ if 'win' in platform:
 else:
     _win = False
     logging.warning('You seem to not be running windows as your OS...\n'
-                    'Working with TDT devices is only supported on Windows!')
+                    'Working with TDT processors is only supported on Windows!')
 
 
-class Devices(object):
+class Processors(object):
     """
-    Class for handling initialization of and basic input/output to TDT-devices.
-    Methods include: initializing devices, writing and reading data, sending
-    triggers and halting the devices.
+    Class for handling initialization of and basic input/output to TDT-processors.
+    Methods include: initializing processors, writing and reading data, sending
+    triggers and halting the processors.
     """
 
     def __init__(self):
-        # TODO: initialize devices when creating class instance
         self.procs = dict()
         self.mode = None
         self._zbus = None
 
-    def initialize_devices(self, device_list: list, zbus: bool = False,
-                           connection: str = 'GB') -> None:
+    def initialize_processors(self, device_list, zbus=False, connection='GB'):
         """
-        Establish connection to one or several TDT-devices.
+        Establish connection to one or several TDT-processors.
 
-        Initialize the devices listed in device_list, which can be a list
+        Initialize the processors listed in device_list, which can be a list
         or list of lists. The list / each sublist contains the name and model
         of a device as well as the path to an rcx-file with the circuit that is
         run on the device. Elements must be in order name - model - circuit.
-        If zbus is True, initialize the ZBus-interface. If the devices are
+        If zbus is True, initialize the ZBus-interface. If the processors are
         already initialized they are reset
 
         Args:
@@ -47,16 +45,16 @@ class Devices(object):
             connection: type of connection to device, can be "GB" (optical) or "USB"
 
         Examples:
-        #    >>> devs = Devices()
+        #    >>> devs = Processors()
         #    >>> # initialize a device of model 'RP2', named 'RP2' and load
         #    >>> # the circuit 'example.rcx'. Also initialize ZBus interface:
-        #    >>> devs.initialize_devices(['RP2', 'RP2', 'example.rcx'], True)
-        #    >>> # initialize two devices of model 'RX8' named 'RX81' and 'RX82'
-        #    >>>devs.initialize_devices(['RX81', 'RX8', 'example.rcx'],
+        #    >>> devs.initialize_processors(['RP2', 'RP2', 'example.rcx'], True)
+        #    >>> # initialize two processors of model 'RX8' named 'RX81' and 'RX82'
+        #    >>>devs.initialize_processors(['RX81', 'RX8', 'example.rcx'],
         #    >>>                        ['RX82', 'RX8', 'example.rcx'])
         """
         # TODO: check if names are unique and id rcx files do exist
-        logging.info('Initializing TDT devices, this may take a moment ...')
+        logging.info('Initializing TDT processors, this may take a moment ...')
         models = []
         for name, model, circuit in device_list:
             # advance index if a model appears more then once
@@ -72,11 +70,11 @@ class Devices(object):
 
     def initialize_default(self, mode: str) -> None:
         """
-        Initialize devices in a default configuration.
+        Initialize processors in a default configuration.
 
-        This function provides a convenient wrapper for initialize_devices.
+        This function provides a convenient wrapper for initialize_processors.
         depending on the mode, device names and models and rcx files are chosen
-        and initialize_devices is called. The modes cover the core functions
+        and initialize_processors is called. The modes cover the core functions
         of the toolbox and include:
 
         'play_rec': play sounds using two RX8s and record them with a RP2
@@ -86,7 +84,7 @@ class Devices(object):
         'cam_calibration': calibrate cameras for headpose estimation
 
         Args:
-            mode (str): default configuration for initializing devices
+            mode (str): default configuration for initializing processors
         """
         if mode.lower() == 'play_rec':
             device_list = [('RP2', 'RP2',  DIR/'data'/'rcx'/'rec_buf.rcx'),
@@ -112,7 +110,7 @@ class Devices(object):
             raise ValueError(f'mode {mode} is not a valid input!')
         self.mode = mode
         logging.info(f'set mode to {mode}')
-        self.initialize_devices(device_list, True, "GB")
+        self.initialize_processors(device_list, True, "GB")
 
     def write(self, tag: Union[str, list], value: Union[int, float, list],
               procs: Union[str, list]) -> int:
@@ -196,7 +194,7 @@ class Devices(object):
 
     def halt(self):
         """
-        Halt all currently active devices.
+        Halt all currently active processors.
         """
         # TODO: can we see if halting was successfull
         for proc_name in self.procs.keys():
@@ -208,11 +206,11 @@ class Devices(object):
     def trigger(self, kind: Union[str, int] = 'zBusA',
                 proc: Union[str, bool] = None) -> None:
         """
-        Send a trigger to the devices.
+        Send a trigger to the processors.
 
         Use software or the zBus-interface (must be initialized) to send
-        a trigger to devices. The zBus triggers are send to
-        all devices by definition. For the software triggers, once has to
+        a trigger to processors. The zBus triggers are send to
+        all processors by definition. For the software triggers, once has to
         specify the device(s).
 
         Args:

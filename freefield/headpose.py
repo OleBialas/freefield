@@ -12,7 +12,7 @@ from tensorflow import keras
 from freefield import DIR
 import logging
 
-model_points = np.float32([[6.825897, 6.760612, 4.402142],
+MODELPOINTS = np.float32([[6.825897, 6.760612, 4.402142],
                           [1.330353, 7.122144, 6.903745],
                           [-1.330353, 7.122144, 6.903745],
                           [-6.825897, 6.760612, 4.402142],
@@ -77,7 +77,7 @@ class PoseEstimator:
                                     shape[57], shape[8]])
             dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
             (success, rotation_vec, translation_vec) = \
-                cv2.solvePnP(model_points, image_pts, camera_matrix,
+                cv2.solvePnP(MODELPOINTS, image_pts, camera_matrix,
                              dist_coeffs)
 
             rotation_mat, _ = cv2.Rodrigues(rotation_vec)

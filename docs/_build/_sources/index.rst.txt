@@ -10,6 +10,8 @@ The Setup
 Our setup consists of an arc and a dome shaped array of 48 loudspeakers in a anechoic chamber. The loudspeakers are driven
 by two RX8 real time processors from Tucker Davis Technologies (TDT).
 
+.. _Installation:
+
 Installation
 ------------
 

@@ -37,14 +37,28 @@ connected via USB or optical cable.
   In [4]: my_proc.initialize(proc_list=["my_RX8", "RX8", circuit], connection="USB")
 
 We now have and instance of :class:`Processors` that contains one RX8-processor with the name "my_RX8" that is
-connected via USB. You can also initialize multiple processors in one call of the :method:`initialize` method
-by passing a list of lists:
+connected via USB. You can also initialize multiple processors in one call of the :meth:`initialize` method
+by passing a list of lists (calling the method again will overwrite any previously initialized devices):
 
 .. ipython::
 
-In[5]: proc_list = [['RP2', 'RP2',  DIR/'data'/'rcx'/'button.rcx'],
-                    ['RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'],
-                    ['RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx']]
+  In [5]: proc_list = [['RP2', 'RP2',  DIR/'data'/'rcx'/'button.rcx'],
+     ...:['RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'],
+     ...:['RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx']]
+
+  In [6]: my_proc.initialize(proc_list=proc_list, connection="USB")
+
+The above circuits enable us to write signal to the processors, play them and capture the subjects response using
+a button box. Since this is the standard setting for our sound localization test, you can use the :meth:`initialize_default`
+method. The above example is synonymous to:
+
+.. ipython::
+
+  In [7]: my_proc.initialize_default(mode="loctest_freefield")
+
+All possible modes are listed in the methods documentation.
+
+
 
 .. _tag-guidelines:
 

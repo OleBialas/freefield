@@ -56,6 +56,8 @@ class Processors(object):
         # TODO: check if names are unique and id rcx files do exist
         logging.info('Initializing TDT processors, this may take a moment ...')
         models = []
+        if not all([isinstance(p, list) for p in proc_list]):
+            proc_list = [proc_list]  # if a single list was provided, wrap it in another list
         for name, model, circuit in proc_list:
             # advance index if a model appears more then once
             models.append(model)

@@ -114,8 +114,7 @@ class Processors(object):
         logging.info(f'set mode to {mode}')
         self.initialize(proc_list, True, "GB")
 
-    def write(self, tag: Union[str, list], value: Union[int, float, list],
-              procs: Union[str, list]) -> int:
+    def write(self, tag, value, procs) :
         """
         Write data to processor(s).
 
@@ -171,7 +170,7 @@ class Processors(object):
                 logging.warning(f'Unable to set tag {tag} on {p}')
         return flag
 
-    def read(self, tag: str, proc: str, n_samples: int = 1):
+    def read(self, tag, proc, n_samples=1):
         """
         Read data from processor.
 
@@ -205,8 +204,7 @@ class Processors(object):
                 logging.info(f'Halting {proc_name}.')
                 proc.Halt()
 
-    def trigger(self, kind: Union[str, int] = 'zBusA',
-                proc: Union[str, bool] = None) -> None:
+    def trigger(self, kind='zBusA', proc=None):
         """
         Send a trigger to the processors.
 

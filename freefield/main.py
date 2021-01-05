@@ -72,6 +72,23 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
         logging.warning('Setup not calibrated...')
 
 
+# Wrappers for Processor operations read, write, trigger and halt:
+def write(tag, value, procs):
+    PROCESSORS.write(tag=tag, value=value, procs=procs)
+
+
+def read(tag, proc, n_samples=1):
+    PROCESSORS.read(tag=tag, proc=proc, n_samples=n_samples)
+
+
+def trigger(kind='zBusA', proc=None):
+    PROCESSORS.trigger(kind=kind, proc=proc)
+
+
+def halt():
+    PROCESSORS.halt()
+
+
 def wait_to_finish_playing(proc="all", tag="playback"):
     """
     Busy wait until the processors finished playing.
@@ -224,7 +241,7 @@ def set_signal_and_speaker(signal, speaker, calibrate=True):
     PROCESSORS.write(tag='data', value=to_play.data, procs=speaker.analog_proc)
     other_procs = list(TABLE["analog_proc"].unique())
     other_procs.remove(speaker.analog_proc.iloc[0])  # set the analog output of other procs to non existent number 99
-    PROCESSORS.write(tag='chan', value=99, procs=speaker.analog_proc)
+    PROCESSORS.write(tag='chan', value=99, procs=other_procs)
 
 
 def apply_calibration(signal, speaker, level=True, frequency=True):

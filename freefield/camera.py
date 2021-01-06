@@ -50,7 +50,7 @@ class Cameras:
                 if resolution < 1.0:
                     image = self.change_image_res(image, resolution)
                 # get the headpose,
-                ele, azi = self.model.pose_from_image(image)
+                azi, ele = self.model.pose_from_image(image)
                 pose = pose.append(
                         pd.DataFrame(
                             [[ele, azi, i_cam, "camera"]],

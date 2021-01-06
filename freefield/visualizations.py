@@ -1,3 +1,21 @@
+from freefield import headpose
+model = headpose.PoseEstimator(threshold=.99)
+import cv2
+from matplotlib import pyplot as plt
+
+def plot_face_detection_marks(image):
+    faceboxes = model.extract_cnn_facebox(image)
+    facebox = faceboxes[0]
+    face_img = image[facebox[1]: facebox[3], facebox[0]: facebox[2]]
+    face_img = cv2.resize(face_img, (128, 128))
+    face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
+    marks = self.detect_marks([face_img])
+    marks *= (facebox[2] - facebox[0])
+    marks[:, 0] += facebox[0]
+    marks[:, 1] += facebox[1]
+    plt.imshow(image, cmap="gray")
+    plt.scatter(marks[:,0], marks[:,1], color="red", marker=".")
+
 
 
 # def _plot_equalization(target, signal, filt, speaker_nr, low_cutoff=50,

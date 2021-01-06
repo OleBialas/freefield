@@ -130,13 +130,13 @@ class FlirCams(Cameras):
             for cam in self.cams:
                 cam.Init()  # Initialize camera
             logging.info(f"initialized {self.ncams} FLIR camera(s)")
-        self.imsize = self.acquire_images(n=1).shape[0:2]
+        imsize = self.acquire_images(n=1).shape[0:2]
+        self.imsize = imsize
 
     def acquire_images(self, n=1):
+        # TODO: ideas to make this faster -> only set nodemap once use async
         if hasattr(self, "imsize"):
             image_data = np.zeros(self.imsize+(n, self.ncams), dtype="uint8")
-        else:
-            image_data = None
         for cam in self.cams:  # start the cameras
             node_acquisition_mode = PySpin.CEnumerationPtr(
                 cam.GetNodeMap().GetNode('AcquisitionMode'))
@@ -155,7 +155,7 @@ class FlirCams(Cameras):
             cam.BeginAcquisition()
         for i_image in range(n):
             for i_cam, cam in enumerate(self.cams):
-                time.sleep(0.01)
+                time.sleep(0.1)
                 image_result = cam.GetNextImage()
                 if image_result.IsIncomplete():
                     raise ValueError('Image incomplete: image status %d ...'
@@ -165,17 +165,16 @@ class FlirCams(Cameras):
                 image = image.GetNDArray()
                 image.setflags(write=1)
                 image_result.Release()
-                if image_data is not None:
+                if hasattr(self, "imsize"):
                     image_data[:, :, i_image, i_cam] = image
                 else:
                     image_data = image
-        [cam.EndAcquisition() for cam in cams]
+        [cam.EndAcquisition() for cam in self.cams]
         return image_data
 
     def halt(self):
         for cam in self.cams:
             if cam.IsInitialized():
-                cam.EndAcquisition()
                 cam.DeInit()
             del cam
         self.cams.Clear()

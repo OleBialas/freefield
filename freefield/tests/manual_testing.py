@@ -45,11 +45,32 @@ for i, cam in enumerate(cams):  # start the cameras
 [cam.EndAcquisition() for cam in cams]
 plt.show()
 
+#### 2. check if taking multiple images and works as expected
+main.initialize_setup(setup="dome", default_mode="cam_calibration", camera_type="flir")
+cams = main.CAMERAS
+images=[]
+for i in range(9):
+    main.wait_for_button()
+    im = cams.acquire_images()
+    images.append(im[:,:,0,0])
+# check the headpose
+for image in images:
+    pose = cams.model.pose_from_image(image)
+    print(pose)
 
 
-setup = "dome"  # run the script twice, once with "dome" and once with "arc"
 
-# initialize the setup:
+
+#### 3. test if reading from and writing to the devices works ####
 main.initialize_setup(setup="dome", default_mode="play_rec", camera_type="flir")
+main.write(tag="playbuflen", value=100, procs="all")
+signal = np.random.randn(100)
+main.write(tag="data", value=signal , procs="RX8s")
+rec = main.read(tag="data", n_samples=100, proc="RX81")
+assert all(rec.round(3) == signal.round(3))
 
-# take images with the cameras and plot them
+
+#### 4. calibrate the cameras ####
+targets = main.all_leds()
+result = main.calibrate_camera(targets, n_reps=3, n_images=5)
+result.to_csv("D:/projects/table.csv")

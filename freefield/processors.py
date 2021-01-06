@@ -120,9 +120,8 @@ class Processors(object):
 
         Set a tag on one or multiple processors to a given value. Processors
         are addressed by their name (the key in the _procs dictionary). The same
-        tag can be set to the same value on multiple processors by giving a
-        list of names. One can set multiple tags by giving lists for variable,
-        value and procs (procs can be a list of lists, see example).
+        tag can be set to the same value on multiple processors by passing a
+        list of names.
 
         This function will call SetTagVal or WriteTagV depending on whether
         value is a single integer or float or an array. If the tag could
@@ -138,36 +137,33 @@ class Processors(object):
                 match the data type of the tag.
             procs : name(s) of the processor(s) to write to
         Examples:
-        #    >>> # set the value of tag 'data' to array data on RX81 & RX82 and
-        #    >>> # set the value of tag 'x' to 0 on RP2 :
-        #    >>> write(['data', 'x'], [data, 0], [['RX81', 'RX82'], 'RP2'])
+        #    >>> # set the value of tag 'data' on RX81 & RX82 to 0
+        #    >>> write('data', 0, ['RX81', 'RX82'])
         """
-        if isinstance(tag, list):
-            if not len(tag) == len(value) == len(procs):
-                raise ValueError("tag, value and procs must be same length!")
+        if isinstance(value, (np.int32, np.int64)):
+            value = int(value)  # use built-int data type
+        if isinstance(procs, str):
+            if procs == "RX8s":
+                procs = [proc for proc in self.procs.keys() if "RX8" in proc]
+            elif procs == "all":
+                procs = list(self.procs.keys())
             else:
-                procs = [item for sublist in procs for item in sublist]
-        else:
-            if isinstance(value, (np.int32, np.int64)):
-                value = int(value)  # use built-int data type
-            tag, value = [tag], [value]
-            if isinstance(procs, str):
                 procs = [procs]
         # Check if the procs are actually there
         if not set(procs).issubset(self.procs.keys()):
             raise ValueError('Can not find some of the specified processors!')
         flag = 0
-        for t, v, p in zip(tag, value, procs):
-            if isinstance(v, (list, np.ndarray)):  # TODO: fix this
-                flag = self.procs[p]._oleobj_.InvokeTypes(
+        for proc in procs:
+            if isinstance(value, (list, np.ndarray)):  # TODO: fix this
+                flag = self.procs[proc]._oleobj_.InvokeTypes(
                     15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)),
-                    t, 0, v)
-                logging.info(f'Set {tag} on {p}.')
+                    tag, 0, value)
+                logging.info(f'Set {tag} on {proc}.')
             else:
-                flag = self.procs[p].SetTagVal(t, v)
-                logging.info(f'Set {tag} to {value} on {p}.')
+                flag = self.procs[proc].SetTagVal(tag, value)
+                logging.info(f'Set {tag} to {value} on {proc}.')
             if flag == 0:
-                logging.warning(f'Unable to set tag {tag} on {p}')
+                logging.warning(f'Unable to set tag {tag} on {proc}')
         return flag
 
     def read(self, tag, proc, n_samples=1):

@@ -78,10 +78,10 @@ def write(tag, value, procs):
 
 
 def read(tag, proc, n_samples=1):
-    PROCESSORS.read(tag=tag, proc=proc, n_samples=n_samples)
+    value = PROCESSORS.read(tag=tag, proc=proc, n_samples=n_samples)
+    return value
 
-
-def trigger(kind='zBusA', proc=None):
+def play(kind='zBusA', proc=None):
     PROCESSORS.trigger(kind=kind, proc=proc)
 
 
@@ -118,7 +118,7 @@ def wait_for_button() -> None:
 
 
 def play_and_wait() -> None:
-    PROCESSORS.trigger()
+    PROCESSORS.play()
     wait_to_finish_playing()
 
 

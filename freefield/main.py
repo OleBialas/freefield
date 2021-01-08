@@ -311,6 +311,16 @@ def get_recording_delay(distance=1.6, sample_rate=48828, play_from=None, rec_fro
     return n_sound_traveling + n_da + n_ad
 
 
+def get_headpose(convert=True, average=True, n=1):
+    """Wrapper for the get headpose method of the camera class"""
+    if isinstance(CAMERAS, camera.Cameras):
+        ele, azi = CAMERAS.get_headpose(convert=convert, average=average, n=n)
+        return ele, azi
+    else:
+        logging.warning("Cameras were not initialized...")
+        return False
+    
+
 def check_pose(fix=(0, 0), var=10):
     """
     Check if the head pose is directed towards the fixation point

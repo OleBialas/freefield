@@ -29,7 +29,7 @@ MODELPOINTS = np.float32([[6.825897, 6.760612, 4.402142],
 
 
 class PoseEstimator:
-    def __init__(self, threshold=.99):
+    def __init__(self, threshold=.9):
         try:
             self.face_net = cv2.dnn.readNetFromCaffe(
                 str(DIR/'data'/"models"/"prototxt"),

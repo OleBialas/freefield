@@ -20,7 +20,7 @@ CALIBRATIONDICT = {}  # calibration to equalize levels
 TABLE = pd.DataFrame()  # numbers and coordinates of all loudspeakers
 
 
-def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connection="GB", camera_type="flir"):
+def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connection="GB", camera_type=None):
     """
     Initialize the processors and load table and calibration for setup.
 
@@ -118,7 +118,7 @@ def wait_for_button() -> None:
 
 
 def play_and_wait() -> None:
-    PROCESSORS.play()
+    PROCESSORS.trigger()
     wait_to_finish_playing()
 
 
@@ -311,6 +311,13 @@ def get_recording_delay(distance=1.6, sample_rate=48828, play_from=None, rec_fro
     return n_sound_traveling + n_da + n_ad
 
 
+def get_headpose(convert=True, average=True, n=5):
+    if CAMERAS is None:
+        logging.warning("Cameras are not initialized!")
+    else:
+        pose = CAMERAS.get_headpose(convert=convert, average=average, n=n)
+        return pose
+
 def check_pose(fix=(0, 0), var=10):
     """
     Check if the head pose is directed towards the fixation point
@@ -323,8 +330,12 @@ def check_pose(fix=(0, 0), var=10):
     """
 
     if isinstance(CAMERAS, camera.Cameras):
-        ele, azi = CAMERAS.get_headpose(convert=True, average=True, n=1)
-        if azi is np.nan:  # if the camera is not calibrated in one direction, NaN will be returned -> ignore
+        pose = CAMERAS.get_headpose(convert=True, average=True, n=1)
+        if isinstance(pose, pd.DataFrame):  # TODO: this is a hack
+            return False
+        else:
+            azi, ele = pose
+        if azi is np.nan:
             azi = fix[0]
         if ele is np.nan:
             ele = fix[1]
@@ -390,6 +401,40 @@ def calibrate_camera(targets, n_reps=1, n_images=5):
         PROCESSORS.write(tag="bitmask", value=0, procs=trial.digital_proc)
     CAMERAS.calibrate(coords, plot=True)
     return coords
+
+
+def calibrate_camera_no_visual(targets, n_reps=1, n_images=5):
+    """
+    This is an alteration of calibrate_camera for cases in which LEDs are
+    not available. The list of targets is repeated n_reps times in the
+    exact same order without any reandomization. When the whole setup is
+    equipped with LEDs this function should be removed
+    """
+    if not isinstance(CAMERAS, camera.Cameras):
+        raise ValueError("Camera must be initialized before calibration!")
+    coords = pd.DataFrame(columns=["azi_cam", "azi_world", "ele_cam", "ele_world", "cam", "frame", "n"])
+    if not PROCESSORS.mode == "cam_calibration":
+        PROCESSORS.initialize( ['RP2', 'RP2',  DIR/'data'/'rcx'/'button.rcx'], True, "GB")
+    # this is a bit of a hack: every trial is it's own condition and they are sorted in the end
+    targets = pd.concat([targets]*n_reps)
+    targets = targets.reset_index()
+    targets = [targets.loc[i] for i in targets.index]
+    seq = slab.Trialsequence(n_reps=1, conditions=targets)
+    seq.trials.sort()
+    for trial in seq:
+        logging.info(f"trial nr {seq.this_n}: \n target at elevation of {trial.ele} and azimuth of {trial.azi}")
+        wait_for_button()
+        pose = CAMERAS.get_headpose(average=False, convert=False, n=n_images)
+        pose.insert(0, "n", seq.this_n)
+        pose = pose.rename(columns={"azi": "azi_cam", "ele": "ele_cam"})
+        pose.insert(2, "ele_world", trial.ele)
+        pose.insert(4, "azi_world", trial.azi)
+        pose = pose.dropna()
+        coords = coords.append(pose, ignore_index=True, sort=True)
+    CAMERAS.calibrate(coords, plot=True)
+    return coords
+
+
 
 
 def localization_test_freefield(targets, duration=0.5, n_reps=1, n_images=5, visual=False):

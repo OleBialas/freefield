@@ -64,7 +64,7 @@ class Cameras:
             else:
                 pose = self.convert_coordinates(pose)
         if average:  # only return the mean
-            return pose.ele.mean(), pose.azi.mean()
+            return pose.azi.mean(), pose.ele.mean()
         else:  # return the whole data frame
             return pose
 

@@ -311,12 +311,15 @@ def get_recording_delay(distance=1.6, sample_rate=48828, play_from=None, rec_fro
     return n_sound_traveling + n_da + n_ad
 
 
-def get_headpose(convert=True, average=True, n=5):
-    if CAMERAS is None:
-        logging.warning("Cameras are not initialized!")
+def get_headpose(convert=True, average=True, n=1):
+    """Wrapper for the get headpose method of the camera class"""
+    if isinstance(CAMERAS, camera.Cameras):
+        azi, ele = CAMERAS.get_headpose(convert=convert, average=average, n=n)
+        return azi, ele
     else:
-        pose = CAMERAS.get_headpose(convert=convert, average=average, n=n)
-        return pose
+        logging.warning("Cameras were not initialized...")
+        return False
+
 
 def check_pose(fix=(0, 0), var=10):
     """

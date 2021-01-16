@@ -215,6 +215,8 @@ class WebCams(Cameras):
                 for i in range(cv2.CAP_PROP_FRAME_COUNT):
                     cam.grab()
                 ret, image = cam.retrieve()
+                if image.shape[-1]==3:
+                    image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
                 if ret is False:
                     logging.warning("could not acquire image...")
             if image_data is not None:

@@ -186,6 +186,7 @@ def get_speaker_list(speaker_list):
         speakers = pd.concat(speakers)
     if len(speaker_list) == 0:
         logging.warning("No speakers found that match the criteria!")
+    speakers = speakers.reset_index()
     return speakers
 
 

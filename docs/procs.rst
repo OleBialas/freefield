@@ -6,7 +6,7 @@ digital signal processors from Tucker-Davis Technologies (TDT).
 Wile the low-level assembly code is programmed "at the factory" we can configure the processors by using
 TDT's graphical programming interface to create a circuit which is saved in the .rcx format and
 loaded onto the device. The operation defined
-by the circuit will be executed when teh device is ran. The figure below shows an example:
+by the circuit will be executed when the device is ran. The figure below shows an example:
 
 .. image:: images/rcx_example.png
   :width: 400
@@ -64,5 +64,3 @@ All possible modes are listed in the methods documentation.
 
 Guidelines for Naming Tags
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-

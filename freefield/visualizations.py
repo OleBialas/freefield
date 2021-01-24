@@ -1,15 +1,15 @@
 from freefield import headpose
-model = headpose.PoseEstimator(threshold=.99)
 import cv2
 from matplotlib import pyplot as plt
 
 def plot_face_detection_marks(image):
+    model = headpose.PoseEstimator(threshold=.99)
     faceboxes = model.extract_cnn_facebox(image)
     facebox = faceboxes[0]
     face_img = image[facebox[1]: facebox[3], facebox[0]: facebox[2]]
     face_img = cv2.resize(face_img, (128, 128))
     face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
-    marks = self.detect_marks([face_img])
+    marks = model.detect_marks([face_img])
     marks *= (facebox[2] - facebox[0])
     marks[:, 0] += facebox[0]
     marks[:, 1] += facebox[1]

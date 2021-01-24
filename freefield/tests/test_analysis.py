@@ -2,7 +2,7 @@ from freefield import main, DIR, analysis
 from freefield.tests.test_camera import VirtualCam
 import pandas as pd
 # generate some data:
-main.initialize_setup(setup="dome", default_mode="play_rec", camera_type="webcam")
+main.initialize_setup(setup="dome", default_mode="play_rec", camera_type=None)
 targets = main.TABLE.sample(10)
 cam = VirtualCam()
 cam.calibrate(pd.read_csv(DIR / "tests" / "coordinates.csv"), plot=False)

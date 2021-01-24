@@ -115,11 +115,11 @@ class TestMainMethods(unittest.TestCase):
         n_files = len(os.listdir(DIR / "data" / "log"))
         main.equalize_speakers(speakers="all", target_speaker=23, bandwidth=1 / 10, db_tresh=80,
                                low_cutoff=200, high_cutoff=16000, alpha=1.0, plot=False, test=True)
-        assert main.CALIBRATIONFILE.exists()
+        assert main.EQUALIZATIONFILE.exists()
         assert len(os.listdir(DIR / "data" / "log")) == n_files + 1  # log folder should be one element longer
-        calibration = main.CALIBRATIONDICT
+        calibration = main.EQUALIZATIONDICT
         main.initialize_setup(setup="dome", default_mode="play_rec", camera_type=None)
-        assert self.assertAlmostEqual(calibration, main.CALIBRATIONDICT)
+        assert self.assertAlmostEqual(calibration, main.EQUALIZATIONDICT)
 
 def test_check_equialization():
     signal = slab.Sound.whitenoise()

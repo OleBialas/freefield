@@ -15,8 +15,8 @@ slab.Signal.set_default_samplerate(48828)  # default samplerate for generating s
 # Initialize global variables:
 CAMERAS = None
 PROCESSORS = Processors()
-CALIBRATIONFILE = Path()
-CALIBRATIONDICT = {}  # calibration to equalize levels
+EQUALIZATIONFILE = Path()
+EQUALIZATIONDICT = {}  # calibration to equalize levels
 TABLE = pd.DataFrame()  # numbers and coordinates of all loudspeakers
 
 
@@ -40,7 +40,7 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
     """
 
     # TODO: put level and frequency equalization in one common file
-    global CALIBRATIONDICT, CALIBRATIONFILE, TABLE, PROCESSORS, CAMERAS
+    global EQUALIZATIONDICT, EQUALIZATIONFILE, TABLE, PROCESSORS, CAMERAS
     # initialize processors
     if bool(proc_list) == bool(default_mode):
         raise ValueError("You have to specify a proc_list OR a default_mode")
@@ -52,10 +52,10 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
         CAMERAS = camera.initialize_cameras(camera_type)
     # get the correct speaker table and calibration files for the setup
     if setup == 'arc':
-        CALIBRATIONFILE = DIR / 'data' / Path('calibration_arc.pkl')
+        EQUALIZATIONFILE = DIR / 'data' / Path('calibration_arc.pkl')
         table_file = DIR / 'data' / 'tables' / Path('speakertable_arc.txt')
     elif setup == 'dome':
-        CALIBRATIONFILE = DIR / 'data' / Path('calibration_dome.pkl')
+        EQUALIZATIONFILE = DIR / 'data' / Path('calibration_dome.pkl')
         table_file = DIR / 'data' / 'tables' / Path('speakertable_dome.txt')
     else:
         raise ValueError("Unknown setup! Use 'arc' or 'dome'.")
@@ -64,9 +64,9 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
     TABLE = pd.read_csv(table_file, dtype={"index_number": "Int64", "channel": "Int64", "analog_proc": "category",
                          "azi": float, "ele": float, "bit": "Int64", "digital_proc": "category"})
     logging.info('Speaker table loaded.')
-    if CALIBRATIONFILE.exists():
-        with open(CALIBRATIONFILE, 'rb') as f:
-            CALIBRATIONDICT = pickle.load(f)
+    if EQUALIZATIONFILE.exists():
+        with open(EQUALIZATIONFILE, 'rb') as f:
+            EQUALIZATIONDICT = pickle.load(f)
         logging.info('Frequency-calibration filters loaded.')
     else:
         logging.warning('Setup not calibrated...')
@@ -235,7 +235,7 @@ def set_signal_and_speaker(signal, speaker, calibrate=True):
                          "Specify either an index number or coordinates of the speaker!")
     if calibrate:
         logging.info('Applying calibration.')  # apply level and frequency calibration
-        to_play = apply_calibration(signal, speaker)
+        to_play = apply_equalization(signal, speaker)
     else:
         to_play = signal
     PROCESSORS.write(tag='chan', value=speaker.channel.iloc[0], procs=speaker.analog_proc)
@@ -245,7 +245,7 @@ def set_signal_and_speaker(signal, speaker, calibrate=True):
     PROCESSORS.write(tag='chan', value=99, procs=other_procs)
 
 
-def apply_calibration(signal, speaker, level=True, frequency=True):
+def apply_equalization(signal, speaker, level=True, frequency=True):
     """
     Apply level correction and frequency equalization to a signal
 
@@ -255,7 +255,7 @@ def apply_calibration(signal, speaker, level=True, frequency=True):
     Returns:
         slab.Sound: calibrated copy of signal
     """
-    if not bool(CALIBRATIONDICT):
+    if not bool(EQUALIZATIONDICT):
         logging.warning("Setup is not calibrated! Returning the signal unchanged...")
         return signal
     else:
@@ -266,7 +266,7 @@ def apply_calibration(signal, speaker, level=True, frequency=True):
             speaker = get_speaker(coordinates=speaker)
         elif not isinstance(speaker, (pd.Series, pd.DataFrame)):
             raise ValueError("Argument speaker must be a index number, coordinates or table row of a speaker!")
-        speaker_calibration = CALIBRATIONDICT[str(speaker.index_number.iloc[0])]
+        speaker_calibration = EQUALIZATIONDICT[str(speaker.index_number.iloc[0])]
         calibrated_signal = deepcopy(signal)
         if level:
             calibrated_signal.level *= speaker_calibration["level"]
@@ -555,7 +555,7 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10, db_tres
     difference by inverse filtering. For more details on how the
     inverse filters are computed see the documentation of slab.Filter.equalizing_filterbank
     """
-    global CALIBRATIONDICT
+    global EQUALIZATIONDICT
     logging.info('Starting calibration.')
     if not PROCESSORS.mode == "play_rec":
         PROCESSORS.initialize_default(mode="play_and_record")
@@ -574,13 +574,13 @@ def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10, db_tres
     #         _plot_equalization(target_speaker, rec.channel(i),
     #                            fbank.channel(i), i)
     for i in range(TABLE.shape[0]):  # write level and frequency equalization into one dictionary
-        CALIBRATIONDICT[str(i)] = {"level": calibration_lvls[i], "filter": filter_bank.channel(i)}
-    if CALIBRATIONFILE.exists():  # move the old calibration to the log folder
+        EQUALIZATIONDICT[str(i)] = {"level": calibration_lvls[i], "filter": filter_bank.channel(i)}
+    if EQUALIZATIONFILE.exists():  # move the old calibration to the log folder
         date = datetime.datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")
-        rename_previous = DIR / 'data' / Path("log/" + _calibration_file.stem + date + _calibration_file.suffix)
-        CALIBRATIONFILE.rename(rename_previous)
-    with open(CALIBRATIONFILE, 'wb') as f:  # save the newly recorded calibration
-        pickle.dump(CALIBRATIONDICT, f, pickle.HIGHEST_PROTOCOL)
+        rename_previous = DIR / 'data' / Path("log/" + EQUALIZATIONFILE.stem + date + EQUALIZATIONFILE.suffix)
+        EQUALIZATIONFILE.rename(rename_previous)
+    with open(EQUALIZATIONFILE, 'wb') as f:  # save the newly recorded calibration
+        pickle.dump(EQUALIZATIONDICT, f, pickle.HIGHEST_PROTOCOL)
     logging.info('Calibration completed.')
 
 
@@ -645,8 +645,8 @@ def check_equalization(sig, speakers="all", max_diff=5, db_thresh=80):
         raise ValueError("Speakers must be 'all' or a list of indices/coordinates!")
     for i in range(speaker_list.shape[0]):
         row = speaker_list.loc[i]
-        sig2 = apply_calibration(sig, speaker=row.index_number, level=True, frequency=False)  # only level equalization
-        sig3 = apply_calibration(sig, speaker=row.index_number, level=True, frequency=True)  # level and frequency
+        sig2 = apply_equalization(sig, speaker=row.index_number, level=True, frequency=False)  # only level equalization
+        sig3 = apply_equalization(sig, speaker=row.index_number, level=True, frequency=True)  # level and frequency
         rec_raw.append(play_and_record(row.index_number, sig, calibrate=False))
         rec_lvl_eq.append(play_and_record(row.index_number, sig2, calibrate=False))
         rec_freq_eq.append(play_and_record(row.index_number, sig3, calibrate=False))

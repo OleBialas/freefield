@@ -8,3 +8,4 @@ pillow
 scipy
 insegel
 ipython
+slab

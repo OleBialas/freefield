@@ -30,3 +30,5 @@ setup(name='freefield',
                                   'tests/*', 'tests/images/*']},
       include_package_data=True,
       zip_safe=False)
+
+# add pypi.org/classifiers

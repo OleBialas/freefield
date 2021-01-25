@@ -56,10 +56,10 @@ class Cameras:
                             [[ele, azi, i_cam, "camera"]],
                             columns=["ele", "azi", "cam", "frame"]))
         if len(pose.dropna()) == 0:
-            if convert:
-                return pose  # if all are NaN, no face was found in any image
+            if average:
+                return (None, None)
             else:
-                return None, None
+                return pose
         if convert:
             if self.calibration is None:
                 logging.warning("Camera is not calibrated!")

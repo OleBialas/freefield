@@ -145,6 +145,8 @@ def get_speaker(index_number=None, coordinates=None):
         int: integer value of the bitmask for the LED at speaker position
         int: index of the processor the LED is attached to (1 or 2)
     """
+    if TABLE.empty:
+        raise ValueError("Speaker table not found. Initialize the setup first")
     row = pd.DataFrame()
     if (index_number is None and coordinates is None) or (index_number is not None and coordinates is not None):
         raise ValueError("You have to specify a the index OR coordinates of the speaker!")

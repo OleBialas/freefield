@@ -17,11 +17,11 @@ import numpy as np
 from abc import abstractmethod
 
 
-def initialize_cameras(kind="flir"):
+def initialize_cameras(kind="flir", face_detection_tresh=.9):
     if kind.lower() == "flir":
-        return FlirCams()
+        return FlirCams(face_detection_tresh=face_detection_tresh)
     elif kind.lower() == "webcam":
-        return WebCams()
+        return WebCams(face_detection_tresh=face_detection_tresh)
 
 
 class Cameras():

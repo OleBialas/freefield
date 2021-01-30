@@ -243,7 +243,7 @@ def set_signal_and_speaker(signal, speaker, calibrate=True):
     PROCESSORS.write(tag='chan', value=speaker.channel, procs=speaker.analog_proc)
     PROCESSORS.write(tag='data', value=to_play.data, procs=speaker.analog_proc)
     other_procs = list(TABLE["analog_proc"].unique())
-    other_procs.remove(speaker.analog_proc.iloc[0])  # set the analog output of other procs to non existent number 99
+    other_procs.remove(speaker.analog_proc)  # set the analog output of other procs to non existent number 99
     PROCESSORS.write(tag='chan', value=99, procs=other_procs)
 
 

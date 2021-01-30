@@ -341,9 +341,9 @@ def check_pose(fix=(0, 0), var=10):
             return False
         else:
             azi, ele = pose
-        if azi is np.nan:
+        if (azi is np.nan) or (azi is None):
             azi = fix[0]
-        if ele is np.nan:
+        if (ele is np.nan) or (ele is None):
             ele = fix[1]
         if np.abs(azi - fix[0]) > var or np.abs(ele - fix[1]) > var:
             return False

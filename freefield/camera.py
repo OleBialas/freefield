@@ -24,9 +24,9 @@ def initialize_cameras(kind="flir"):
         return WebCams()
 
 
-class Cameras:
-    def __init__(self):
-        self.model = PoseEstimator()
+class Cameras():
+    def __init__(self, face_detection_tresh=.9):
+        self.model = PoseEstimator(threshold = face_detection_tresh)
         self.calibration = None
 
     @abstractmethod
@@ -120,8 +120,8 @@ class Cameras:
 
 
 class FlirCams(Cameras):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, face_detection_tresh=.9):
+        super().__init__(face_detection_tresh=face_detection_tresh)
         self.system = PySpin.System.GetInstance()
         self.cams = self.system.GetCameras()
         self.ncams = self.cams.GetSize()
@@ -187,7 +187,7 @@ class FlirCams(Cameras):
 
 class WebCams(Cameras):
     def __init__(self):
-        super().__init__()
+        super().__init__(face_detection_tresh=face_detection_tresh)
         self.cams = []
         stop = False
         while stop is False:

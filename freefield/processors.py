@@ -7,7 +7,7 @@ import logging
 from typing import Union
 from collections import Counter
 try:
-    import win32com
+    import win32com.client
 except ModuleNotFoundError:
     win32com = None
     logging.warning('Could not import pywin32 - working with TDT devices is disabled')

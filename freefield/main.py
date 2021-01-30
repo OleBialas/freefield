@@ -20,7 +20,7 @@ EQUALIZATIONDICT = {}  # calibration to equalize levels
 TABLE = pd.DataFrame()  # numbers and coordinates of all loudspeakers
 
 
-def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connection="GB", camera_type=None):
+def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connection="GB", camera_type=None, face_detection_tresh=.9):
     """
     Initialize the processors and load table and calibration for setup.
 
@@ -49,7 +49,7 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
     elif default_mode is not None:
         PROCESSORS.initialize_default(default_mode)
     if camera_type is not None:
-        CAMERAS = camera.initialize_cameras(camera_type)
+        CAMERAS = camera.initialize_cameras(camera_type, face_detection_tresh=face_detection_tresh)
     # get the correct speaker table and calibration files for the setup
     if setup == 'arc':
         EQUALIZATIONFILE = DIR / 'data' / Path('calibration_arc.pkl')
@@ -240,7 +240,7 @@ def set_signal_and_speaker(signal, speaker, calibrate=True):
         to_play = apply_equalization(signal, speaker)
     else:
         to_play = signal
-    PROCESSORS.write(tag='chan', value=speaker.channel.iloc[0], procs=speaker.analog_proc)
+    PROCESSORS.write(tag='chan', value=speaker.channel, procs=speaker.analog_proc)
     PROCESSORS.write(tag='data', value=to_play.data, procs=speaker.analog_proc)
     other_procs = list(TABLE["analog_proc"].unique())
     other_procs.remove(speaker.analog_proc.iloc[0])  # set the analog output of other procs to non existent number 99

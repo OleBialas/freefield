@@ -240,10 +240,10 @@ def set_signal_and_speaker(signal, speaker, calibrate=True):
         to_play = apply_equalization(signal, speaker)
     else:
         to_play = signal
-    PROCESSORS.write(tag='chan', value=speaker.channel, procs=speaker.analog_proc)
-    PROCESSORS.write(tag='data', value=to_play.data, procs=speaker.analog_proc)
+    PROCESSORS.write(tag='chan', value=speaker.channel.iloc[0], procs=speaker.analog_proc.iloc[0])
+    PROCESSORS.write(tag='data', value=to_play.data, procs=speaker.analog_proc.iloc[0])
     other_procs = list(TABLE["analog_proc"].unique())
-    other_procs.remove(speaker.analog_proc)  # set the analog output of other procs to non existent number 99
+    other_procs.remove(speaker.analog_proc.iloc[0])  # set the analog output of other procs to non existent number 99
     PROCESSORS.write(tag='chan', value=99, procs=other_procs)
 
 
@@ -479,7 +479,7 @@ def localization_test_freefield(targets, duration=0.5, n_reps=1, n_images=5, vis
             play_warning_sound()
             wait_for_button()
         sound = slab.Sound.pinknoise(duration=duration)
-        set_signal_and_speaker(signal=sound, speaker=trial.index_number)
+        set_signal_and_speaker(signal=sound.data.flatten(), speaker=trial.index_number)
         seq = _loctest_trial(trial, seq, visual, n_images)
     play_start_sound()
     return seq

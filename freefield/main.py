@@ -50,26 +50,24 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
         PROCESSORS.initialize_default(default_mode)
     if camera_type is not None:
         CAMERAS = camera.initialize_cameras(camera_type)
-    # get the correct speaker table and calibration files for the setup
-    if setup == 'arc':
-        EQUALIZATIONFILE = DIR / 'data' / Path('calibration_arc.pkl')
-        table_file = DIR / 'data' / 'tables' / Path('speakertable_arc.txt')
-    elif setup == 'dome':
-        EQUALIZATIONFILE = DIR / 'data' / Path('calibration_dome.pkl')
-        table_file = DIR / 'data' / 'tables' / Path('speakertable_dome.txt')
-    else:
-        raise ValueError("Unknown setup! Use 'arc' or 'dome'.")
+    TABLE = read_table(setup)  # load the table containing the information about the loudspeakers
     logging.info(f'Speaker configuration set to {setup}.')
-    # lambdas provide default values of 0 if azi or ele are not in the file
-    TABLE = pd.read_csv(table_file, dtype={"index_number": "Int64", "channel": "Int64", "analog_proc": "category",
-                         "azi": float, "ele": float, "bit": "Int64", "digital_proc": "category"})
-    logging.info('Speaker table loaded.')
+    EQUALIZATIONFILE = DIR / 'data' / Path(f'calibration_{setup}.pkl')
     if EQUALIZATIONFILE.exists():
         with open(EQUALIZATIONFILE, 'rb') as f:
             EQUALIZATIONDICT = pickle.load(f)
         logging.info('Frequency-calibration filters loaded.')
     else:
         logging.warning('Setup not calibrated...')
+
+
+def read_table(setup="dome"):
+    if setup not in ["dome", "arc"]:
+        raise ValueError("Setup must be 'dome' or 'arc'!")
+    table_file = DIR / 'data' / 'tables' / Path(f'speakertable_{setup}.txt')
+    table = pd.read_csv(table_file, dtype={"index_number": "Int64", "channel": "Int64", "analog_proc": "category",
+                                           "azi": float, "ele": float, "bit": "Int64", "digital_proc": "category"})
+    return table
 
 
 # Wrappers for Processor operations read, write, trigger and halt:

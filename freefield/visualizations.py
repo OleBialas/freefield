@@ -135,8 +135,8 @@ class SphericalPoint(object):
 """
 
 if __name__ == '__main__':
-    plot_dome()
-
+    speakers = main.read_table("dome")
+    speakers = speakers[["azi", "ele"]]
 
 
 # def _plot_equalization(target, signal, filt, speaker_nr, low_cutoff=50,

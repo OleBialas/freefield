@@ -20,7 +20,7 @@ EQUALIZATIONDICT = {}  # calibration to equalize levels
 TABLE = pd.DataFrame()  # numbers and coordinates of all loudspeakers
 
 
-def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connection="GB", camera_type=None):
+def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connection="GB", camera_type=None, face_detection_tresh=.9):
     """
     Initialize the processors and load table and calibration for setup.
 
@@ -49,7 +49,7 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
     elif default_mode is not None:
         PROCESSORS.initialize_default(default_mode)
     if camera_type is not None:
-        CAMERAS = camera.initialize_cameras(camera_type)
+        CAMERAS = camera.initialize_cameras(camera_type, face_detection_tresh=face_detection_tresh)
     TABLE = read_table(setup)  # load the table containing the information about the loudspeakers
     logging.info(f'Speaker configuration set to {setup}.')
     EQUALIZATIONFILE = DIR / 'data' / Path(f'calibration_{setup}.pkl')
@@ -143,6 +143,8 @@ def get_speaker(index_number=None, coordinates=None):
         int: integer value of the bitmask for the LED at speaker position
         int: index of the processor the LED is attached to (1 or 2)
     """
+    if TABLE.empty:
+        raise ValueError("Speaker table not found. Initialize the setup first")
     row = pd.DataFrame()
     if (index_number is None and coordinates is None) or (index_number is not None and coordinates is not None):
         raise ValueError("You have to specify a the index OR coordinates of the speaker!")
@@ -236,8 +238,8 @@ def set_signal_and_speaker(signal, speaker, calibrate=True):
         to_play = apply_equalization(signal, speaker)
     else:
         to_play = signal
-    PROCESSORS.write(tag='chan', value=speaker.channel.iloc[0], procs=speaker.analog_proc)
-    PROCESSORS.write(tag='data', value=to_play.data, procs=speaker.analog_proc)
+    PROCESSORS.write(tag='chan', value=speaker.channel.iloc[0], procs=speaker.analog_proc.iloc[0])
+    PROCESSORS.write(tag='data', value=to_play.data, procs=speaker.analog_proc.iloc[0])
     other_procs = list(TABLE["analog_proc"].unique())
     other_procs.remove(speaker.analog_proc.iloc[0])  # set the analog output of other procs to non existent number 99
     PROCESSORS.write(tag='chan', value=99, procs=other_procs)
@@ -337,9 +339,9 @@ def check_pose(fix=(0, 0), var=10):
             return False
         else:
             azi, ele = pose
-        if azi is np.nan:
+        if (azi is np.nan) or (azi is None):
             azi = fix[0]
-        if ele is np.nan:
+        if (ele is np.nan) or (ele is None):
             ele = fix[1]
         if np.abs(azi - fix[0]) > var or np.abs(ele - fix[1]) > var:
             return False
@@ -475,7 +477,7 @@ def localization_test_freefield(targets, duration=0.5, n_reps=1, n_images=5, vis
             play_warning_sound()
             wait_for_button()
         sound = slab.Sound.pinknoise(duration=duration)
-        set_signal_and_speaker(signal=sound, speaker=trial.index_number)
+        set_signal_and_speaker(signal=sound.data.flatten(), speaker=trial.index_number)
         seq = _loctest_trial(trial, seq, visual, n_images)
     play_start_sound()
     return seq

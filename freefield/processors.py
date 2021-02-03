@@ -6,13 +6,11 @@ import random
 import logging
 from typing import Union
 from collections import Counter
-if 'win' in platform:
+try:
     import win32com.client
-    _win = True
-else:
-    _win = False
-    logging.warning('You seem to not be running windows as your OS...\n'
-                    'Working with TDT processors is only supported on Windows!')
+except ModuleNotFoundError:
+    win32com = None
+    logging.warning('Could not import pywin32 - working with TDT devices is disabled')
 
 
 class Processors(object):
@@ -155,6 +153,10 @@ class Processors(object):
         flag = 0
         for proc in procs:
             if isinstance(value, (list, np.ndarray)):  # TODO: fix this
+                value = np.array(value)  # convert to array
+                if value.ndim > 1:
+                    logging.warning("the input array has more than one dimension! Data is flattened...")
+                    value = value.flatten()
                 flag = self.procs[proc]._oleobj_.InvokeTypes(
                     15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)),
                     tag, 0, value)
@@ -234,7 +236,7 @@ class Processors(object):
 
     @staticmethod
     def _initialize_proc(model: str, circuit: str, connection: str, index: int):
-        if _win:
+        if win32com is not None:
             try:
                 rp = win32com.client.Dispatch('RPco.X')
             except win32com.client.pythoncom.com_error as err:
@@ -269,7 +271,7 @@ class Processors(object):
     @staticmethod
     def _initialize_zbus(connection: str = "GB"):
         zb = _COM()
-        if _win:
+        if win32com is not None:
             try:
                 zb = win32com.client.Dispatch('ZBUS.x')
             except win32com.client.pythoncom.com_error as err:

@@ -85,6 +85,7 @@ def play(kind='zBusA', proc=None):
 
 def halt():
     PROCESSORS.halt()
+    CAMERAS.halt()
 
 
 def wait_to_finish_playing(proc="all", tag="playback"):

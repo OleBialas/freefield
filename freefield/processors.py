@@ -197,7 +197,7 @@ class Processors(object):
         """
         # TODO: can we see if halting was successfull
         for proc_name in self.procs.keys():
-            proc = getattr(self.procs, proc_name)
+            proc = self.procs[proc_name]
             if hasattr(proc, 'Halt'):
                 logging.info(f'Halting {proc_name}.')
                 proc.Halt()

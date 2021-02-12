@@ -1,28 +1,7 @@
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 import numpy as np
-from math import *
 from freefield import main
-from matplotlib.patches import FancyArrowPatch
-from mpl_toolkits.mplot3d import proj3d
-import pandas as pd
-
-
-def plot_face_detection_marks(image):
-    from freefield import headpose
-    import cv2
-    model = headpose.PoseEstimator(threshold=.99)
-    face_boxes = model.extract_cnn_facebox(image)
-    face_box = face_boxes[0]
-    face_img = image[face_box[1]: face_box[3], face_box[0]: face_box[2]]
-    face_img = cv2.resize(face_img, (128, 128))
-    face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
-    marks = model.detect_marks([face_img])
-    marks *= (face_box[2] - face_box[0])
-    marks[:, 0] += face_box[0]
-    marks[:, 1] += face_box[1]
-    plt.imshow(image, cmap="gray")
-    plt.scatter(marks[:, 0], marks[:, 1], color="red", marker=".")
 
 
 def plot_sources(azimuth, elevation, distance=1.6):

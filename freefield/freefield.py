@@ -1,15 +1,15 @@
 import time
 from pathlib import Path
+import datetime
 from copy import deepcopy
+import pickle
+from dataclasses import dataclass
+import logging
 import numpy as np
 import slab
-import pickle
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
-import pandas as pd
-import datetime
 from freefield import DIR, Processors, camera
-import logging
 logging.basicConfig(level=logging.INFO)
 slab.Signal.set_default_samplerate(48828)  # default samplerate for generating sounds, filters etc.
 # Initialize global variables:
@@ -68,6 +68,19 @@ def read_table(setup="dome"):
     table = pd.read_csv(table_file, dtype={"index_number": "Int64", "channel": "Int64", "analog_proc": "category",
                                            "azi": float, "ele": float, "bit": "Int64", "digital_proc": "category"})
     return table
+
+
+@dataclass(frozen=True)
+class Speaker:
+    index: int  # the index number of the speaker
+    channel: int  # the number of the analog channel to which the speaker is attached
+    analog_proc: str  # the processor to whose analog I/O the speaker is attached
+    digital_proc: str  # the processor to whose digital I/O the speaker's LED is attached
+    azimuth: float  # the azimuth angle of the speaker
+    elevation: float  # the azimuth angle of the speaker
+    bitmask: int  # the integer value of the bitmask for turning on the speaker's LED
+
+
 
 
 # Wrappers for Processor operations read, write, trigger and halt:

@@ -1,31 +1,32 @@
-import logging
-from abc import abstractmethod
-import time
 import numpy  # for some reason numpy must be imported before PySpin
-from scipy import stats
-from matplotlib import pyplot as plt
-import pandas as pd
-import cv2
-import PIL
-from headpose import PoseEstimator
 try:
     import PySpin
 except ModuleNotFoundError:
     print("PySpin module required for working with FLIR cams not found! \n"
           "You can download the .whl here: \n"
           "https://www.flir.com/products/spinnaker-sdk/")
+import PIL
+from freefield import PoseEstimator
+import time
+import cv2
+from scipy import stats
+from matplotlib import pyplot as plt
+import pandas as pd
+import logging
+import numpy as np
+from abc import abstractmethod
 
 
-def initialize_cameras(kind="flir", face_detection_thresh=.9):
+def initialize_cameras(kind="flir", face_detection_tresh=.9):
     if kind.lower() == "flir":
-        return FlirCams(face_detection_tresh=face_detection_thresh)
+        return FlirCams(face_detection_tresh=face_detection_tresh)
     elif kind.lower() == "webcam":
-        return WebCams(face_detection_tresh=face_detection_thresh)
+        return WebCams(face_detection_tresh=face_detection_tresh)
 
 
 class Cameras():
     def __init__(self, face_detection_tresh=.9):
-        self.model = PoseEstimator(threshold=face_detection_tresh)
+        self.model = PoseEstimator(threshold = face_detection_tresh)
         self.calibration = None
 
     @abstractmethod
@@ -78,10 +79,10 @@ class Cameras():
         return numpy.asarray(image)
 
     def convert_coordinates(self, coords):
-        for cam in numpy.unique(coords["cam"]):  # convert for each cam ...
+        for cam in np.unique(coords["cam"]):  # convert for each cam ...
             for angle in ["azi", "ele"]:  # ... and each angle
                 # get the regression coefficients a & b
-                reg = self.calibration[numpy.logical_and(
+                reg = self.calibration[np.logical_and(
                     self.calibration["cam"] == cam,
                     self.calibration["angle"] == angle)]
                 a, b = reg["a"].values[0], reg["b"].values[0]
@@ -102,7 +103,7 @@ class Cameras():
                 x = cam_coords[angle+"_cam"].values.astype(float)
                 y = cam_coords[angle+"_world"].values.astype(float)
                 b, a, r, _, _ = stats.linregress(x, y)
-                if numpy.abs(r) < 0.85:
+                if np.abs(r) < 0.85:
                     logging.warning(f"Correlation for camera {cam} {angle} is only {r}!")
                 row = {"a": a, "b": b, "cam": cam, "angle": angle}
                 calibration = calibration.append(row, ignore_index=True)
@@ -138,7 +139,7 @@ class FlirCams(Cameras):
     def acquire_images(self, n=1):
         # TODO: ideas to make this faster -> only set nodemap once use async
         if hasattr(self, "imsize"):
-            image_data = numpy.zeros(self.imsize+(n, self.ncams), dtype="uint8")
+            image_data = np.zeros(self.imsize+(n, self.ncams), dtype="uint8")
         for cam in self.cams:  # start the cameras
             node_acquisition_mode = PySpin.CEnumerationPtr(
                 cam.GetNodeMap().GetNode('AcquisitionMode'))
@@ -185,8 +186,8 @@ class FlirCams(Cameras):
 
 
 class WebCams(Cameras):
-    def __init__(self, face_detection_thresh):
-        super().__init__(face_detection_tresh=face_detection_thresh)
+    def __init__(self, face_detection_tresh):
+        super().__init__(face_detection_tresh=face_detection_tresh)
         self.cams = []
         stop = False
         while stop is False:
@@ -206,7 +207,7 @@ class WebCams(Cameras):
             retrieve the latest one
         """
         if hasattr(self, "imsize"):
-            image_data = numpy.zeros(self.imsize+(n, self.ncams), dtype="uint8")
+            image_data = np.zeros(self.imsize+(n, self.ncams), dtype="uint8")
         else:
             image_data = None
         for i_image in range(n):

@@ -1,7 +1,7 @@
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 import numpy as np
-from freefield import main
+from freefield import freefield
 
 
 def plot_sources(azimuth, elevation, distance=1.6):
@@ -23,7 +23,7 @@ def plot_sources(azimuth, elevation, distance=1.6):
 
 
 if __name__ == '__main__':
-    speakers = main.read_table("dome")
+    speakers = freefield.read_table("dome")
     azi = np.array(speakers["azi"].to_list())
     ele = np.array(speakers["ele"].to_list())
     plot_sources(azi, ele)

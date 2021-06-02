@@ -3,6 +3,7 @@ from scipy import stats
 import pandas as pd
 from slab import Trialsequence
 
+
 def get_loctest_data(sequence):
     """
     Extract the data from a trialsequence and return them in a data frame. The trialsequence must be in the same format
@@ -24,6 +25,7 @@ def get_loctest_data(sequence):
         data = data.append(row, ignore_index=True)
     return data
 
+
 def mean_dir(data, speaker):
     # use vector addition with uncorrected angles:
     # sines, cosines = _sines_cosines(data, speaker)
@@ -41,6 +43,7 @@ def mad(data, speaker, ref_dir=None):
     diffs = data[idx,2:4] - ref_dir
     return np.sqrt((diffs**2).sum(axis=2)).mean()
 
+
 def rmse(data, speaker, ref_dir=None):
     'Vertical and horizontal localization accuracies were quantified by computing the root mean square of the discrep- ancies between perceived and physical locations (RMSE, Hartmann, 1983; Savel, 2009).'
     if ref_dir is None:
@@ -49,6 +52,7 @@ def rmse(data, speaker, ref_dir=None):
     diffs = data[idx,2:4] - ref_dir
     dist = np.sqrt((diffs**2).sum(axis=2))
     return np.sqrt((dist**2).mean())
+
 
 def eg(data, speaker_positions=None):
     '''

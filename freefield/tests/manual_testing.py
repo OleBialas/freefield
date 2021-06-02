@@ -1,7 +1,7 @@
 # Tests to run on the real setup
 # start with the basic elements, then run complete procedures like
 # calibration or localization test
-from freefield import main, camera
+from freefield import freefield, camera
 import PySpin
 import numpy as np
 import time
@@ -46,11 +46,11 @@ for i, cam in enumerate(cams):  # start the cameras
 plt.show()
 
 # check if taking multiple images and works as expected
-main.initialize_setup(setup="dome", default_mode="cam_calibration", camera_type="flir")
-cams = main.CAMERAS
+freefield.initialize_setup(setup="dome", default_mode="cam_calibration", camera_type="flir")
+cams = freefield.CAMERAS
 images=[]
 for i in range(9):
-    main.wait_for_button()
+    freefield.wait_for_button()
     im = cams.acquire_images()
     images.append(im[:,:,0,0])
 # check the headpose
@@ -61,9 +61,9 @@ for image in images:
 
 
 #### 2. test if reading from and writing to the devices works ####
-main.initialize_setup(setup="dome", default_mode="play_rec", camera_type="flir")
-main.write(tag="playbuflen", value=100, procs="RX8s")
+freefield.initialize_setup(setup="dome", default_mode="play_rec", camera_type="flir")
+freefield.write(tag="playbuflen", value=100, procs="RX8s")
 signal = np.random.randn(100)
-main.write(tag="data", value=signal , procs="RX8s")
-rec = main.read(tag="data", n_samples=100, proc="RX81")
+freefield.write(tag="data", value=signal, procs="RX8s")
+rec = freefield.read(tag="data", n_samples=100, proc="RX81")
 assert all(rec.round(3) == signal.round(3))

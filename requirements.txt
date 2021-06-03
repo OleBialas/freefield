@@ -8,3 +8,4 @@ insegel
 ipython
 slab
 headpose
+opencv-python

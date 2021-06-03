@@ -1,128 +1,114 @@
-import numpy  # for some reason numpy must be imported before PySpin
+import time
+import logging
+from abc import abstractmethod
+import numpy
+from matplotlib import pyplot as plt
+from scipy import stats
+import PIL
+import cv2
 try:
     import PySpin
 except ModuleNotFoundError:
-    print("PySpin module required for working with FLIR cams not found! \n"
-          "You can download the .whl here: \n"
-          "https://www.flir.com/products/spinnaker-sdk/")
+    PySpin = False
 from headpose import PoseEstimator
-import time
-from scipy import stats
-from matplotlib import pyplot as plt
-import logging
-import numpy as np
-from abc import abstractmethod
 
 
-def initialize_cameras(kind="flir", face_detection_tresh=.9):
+def initialize_cameras(kind="flir"):
     if kind.lower() == "flir":
-        return FlirCams(face_detection_tresh=face_detection_tresh)
+        return FlirCams()
     elif kind.lower() == "webcam":
-        return WebCams(face_detection_tresh=face_detection_tresh)
+        return WebCams()
 
 
-class Cameras():
-    def __init__(self, face_detection_tresh=.9):
-        self.model = PoseEstimator(threshold = face_detection_tresh)
-        self.calibration = None
+class Cameras:
+    def __init__(self):
+        self.imsize = None
+        self.model = PoseEstimator()
+        self.calibration = dict()
+
+    def set_detection_threshold(self, threshold):
+        self.model.threshold = threshold
 
     @abstractmethod
-    def acquire_images(self) -> None:
+    def acquire_images(self, n):
         pass
 
     @abstractmethod
-    def halt(self) -> None:
+    def halt(self):
         pass
 
-    def get_headpose(self, convert=True, average=True, n=1, resolution=1.0):
-        """Acquire n images and compute headpose (elevation and azimuth). If
+    def get_head_pose(self, convert=True, average_axis=1, n=1, resolution=1.0):
+        """Acquire n images and compute head pose (elevation and azimuth). If
         convert is True use the regression coefficients to convert
         the camera into world coordinates
         """
-        pose = pd.DataFrame(columns=["ele", "azi", "cam"])
         images = self.acquire_images(n)  # take images
+        pose = numpy.zeros(2, images.shape[2], images.shape[3])
         for i_cam in range(images.shape[3]):
             for i_image in range(images.shape[2]):
                 image = images[:, :, i_image, i_cam]  # get image from array
                 if resolution < 1.0:
                     image = self.change_image_res(image, resolution)
-                # get the headpose,
-                azi, ele = self.model.pose_from_image(image)
-                pose = pose.append(
-                        pd.DataFrame(
-                            [[ele, azi, i_cam, "camera"]],
-                            columns=["ele", "azi", "cam", "frame"]))
-        if len(pose.dropna()) == 0:
-            if average:
-                return (None, None)
-            else:
-                return pose
+                azimuth, elevation = self.model.pose_from_image(image)
+                pose[:, i_image, i_cam] = azimuth, elevation
         if convert:
-            if self.calibration is None:
-                logging.warning("Camera is not calibrated!")
-                return None
-            else:
-                pose = self.convert_coordinates(pose)
-        if average:  # only return the mean
-            return pose.azi.mean(), pose.ele.mean()
-        else:  # return the whole data frame
-            return pose
+            pose = self.convert_coordinates(pose)
+        if average_axis is not None:
+            pose = pose.mean(axis=average_axis)
+        return pose
 
     def change_image_res(self, image, resolution):
         image = PIL.Image.fromarray(image)
-        width = int(self.imsize[1]*resolution)
-        height = int(self.imsize[0]*resolution)
+        width = int(self.imsize[1] * resolution)
+        height = int(self.imsize[0] * resolution)
         image = image.resize((width, height), PIL.Image.ANTIALIAS)
         return numpy.asarray(image)
 
-    def convert_coordinates(self, coords):
-        for cam in np.unique(coords["cam"]):  # convert for each cam ...
-            for angle in ["azi", "ele"]:  # ... and each angle
-                # get the regression coefficients a & b
-                reg = self.calibration[np.logical_and(
-                    self.calibration["cam"] == cam,
-                    self.calibration["angle"] == angle)]
-                a, b = reg["a"].values[0], reg["b"].values[0]
-                coords.loc[coords["cam"] == cam, angle] = \
-                    a + b * coords[coords["cam"] == cam][angle]
-        coords.frame = "world"  # coords are now in "world" frame
-        return coords
+    def convert_coordinates(self, pose):
+        if not self.calibration:
+            raise ValueError("Camera has to be calibrated to convert coordinates")
+        for i_cam in range(pose.shape[2]):  # convert for each cam ...
+            for i_image in range(pose.shape[1]):
+                for i_angle, angle in enumerate(["azimuth", "elevation"]):  # ... and each angle
+                    a, b = self.calibration[f"cam{i_cam}"][angle]
+                    pose[i_angle, i_image, i_cam] = a + b * pose[i_angle, i_image, i_cam]
+        return pose
 
-    def calibrate(self, coords, plot=True):
-        calibration = pd.DataFrame(columns=["a", "b", "cam", "angle"])
-        if plot:
+    def calibrate(self, world_coordinates, camera_coordinates, plot=True):
+        if not world_coordinates.shape == camera_coordinates.shape:
+            raise ValueError("Camera and world coordinates must be of the same shape!")
+        if plot is True:
             fig, ax = plt.subplots(2)
             fig.suptitle("World vs Camera Coordinates")
-        for cam in pd.unique(coords["cam"]):  # calibrate each camera
-            cam_coords = coords[coords["cam"] == cam]
-            # find regression coefficients for azimuth and elevation
-            for i, angle in enumerate(["ele", "azi"]):
-                x = cam_coords[angle+"_cam"].values.astype(float)
-                y = cam_coords[angle+"_world"].values.astype(float)
+        for i_cam in range(camera_coordinates.shape[-1]):  # calibrate each camera
+            for i_angle, angle in enumerate(["azimuth", "elevation"]):  # ... and each angle
+                x, y = camera_coordinates[i_angle, :, i_cam], world_coordinates[i_angle, :, i_cam]
                 b, a, r, _, _ = stats.linregress(x, y)
-                if np.abs(r) < 0.85:
-                    logging.warning(f"Correlation for camera {cam} {angle} is only {r}!")
-                row = {"a": a, "b": b, "cam": cam, "angle": angle}
-                calibration = calibration.append(row, ignore_index=True)
-                if plot:
-                    ax[i].scatter(x, y)
-                    ax[i].plot(x, x*b+a, linestyle="--", label=cam)
-                    ax[i].set_title(angle)
-                    ax[i].legend()
-                    ax[i].set_xlabel("camera coordinates in degree")
-                    ax[i].set_ylabel("world coordinates in degree")
-        self.calibration = calibration
+                if numpy.abs(r) < 0.85:
+                    logging.warning(f"Correlation for camera {i_cam} {angle} is only {r}!")
+                self.calibration[f"cam{i_cam}"]["a"], self.calibration[f"cam{i_cam}"]["b"] = a, b
+                if plot is True:
+                    ax[i_angle].scatter(x, y)
+                    ax[i_angle].plot(x, x * b + a, linestyle="--", label=f"cam{i_cam}")
+                    ax[i_angle].set_title(angle)
+                    ax[i_angle].legend()
+                    ax[i_angle].set_xlabel("camera coordinates in degree")
+                    ax[i_angle].set_ylabel("world coordinates in degree")
         if plot:
             plt.show()
 
 
 class FlirCams(Cameras):
-    def __init__(self, face_detection_tresh=.9):
-        super().__init__(face_detection_tresh=face_detection_tresh)
+    def __init__(self):
+        if PySpin is False:
+            raise ValueError("PySpin module required for working with FLIR cams not found! \n"
+                             "You can download the .whl here: \n"
+                             "https://www.flir.com/products/spinnaker-sdk/")
+        super().__init__()
         self.system = PySpin.System.GetInstance()
         self.cams = self.system.GetCameras()
         self.ncams = self.cams.GetSize()
-        if self.ncams == 0:    # Finish if there are no cameras
+        if self.ncams == 0:  # Finish if there are no cameras
             self.cams.Clear()  # Clear camera list before releasing system
             self.system.ReleaseInstance()  # Release system instance
             logging.warning('No camera found!')
@@ -135,8 +121,10 @@ class FlirCams(Cameras):
 
     def acquire_images(self, n=1):
         # TODO: ideas to make this faster -> only set nodemap once use async
-        if hasattr(self, "imsize"):
-            image_data = np.zeros(self.imsize+(n, self.ncams), dtype="uint8")
+        if self.imsize is not None:
+            image_data = numpy.zeros(self.imsize + (n, self.ncams), dtype="uint8")
+        else:
+            image_data = None
         for cam in self.cams:  # start the cameras
             node_acquisition_mode = PySpin.CEnumerationPtr(
                 cam.GetNodeMap().GetNode('AcquisitionMode'))
@@ -165,7 +153,7 @@ class FlirCams(Cameras):
                 image = image.GetNDArray()
                 image.setflags(write=1)
                 image_result.Release()
-                if hasattr(self, "imsize"):
+                if image_data is not None:
                     image_data[:, :, i_image, i_cam] = image
                 else:
                     image_data = image
@@ -183,8 +171,9 @@ class FlirCams(Cameras):
 
 
 class WebCams(Cameras):
-    def __init__(self, face_detection_tresh):
-        super().__init__(face_detection_tresh=face_detection_tresh)
+
+    def __init__(self):
+        super().__init__()
         self.cams = []
         stop = False
         while stop is False:
@@ -203,8 +192,8 @@ class WebCams(Cameras):
             the buffer one step at a time, thus grab all images and only
             retrieve the latest one
         """
-        if hasattr(self, "imsize"):
-            image_data = np.zeros(self.imsize+(n, self.ncams), dtype="uint8")
+        if self.imsize is not None:
+            image_data = numpy.zeros(self.imsize + (n, self.ncams), dtype="uint8")
         else:
             image_data = None
         for i_image in range(n):

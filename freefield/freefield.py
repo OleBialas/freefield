@@ -20,7 +20,8 @@ EQUALIZATIONDICT = {}  # calibration to equalize levels
 TABLE = pd.DataFrame()  # numbers and coordinates of all loudspeakers
 
 
-def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connection="GB", camera_type=None, face_detection_tresh=.9):
+def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connection="GB", camera_type=None,
+                     face_detection_tresh=.9):
     """
     Initialize the processors and load table and calibration for setup.
 

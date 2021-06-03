@@ -5,13 +5,10 @@ except ModuleNotFoundError:
     print("PySpin module required for working with FLIR cams not found! \n"
           "You can download the .whl here: \n"
           "https://www.flir.com/products/spinnaker-sdk/")
-import PIL
-from freefield import PoseEstimator
+from headpose import PoseEstimator
 import time
-import cv2
 from scipy import stats
 from matplotlib import pyplot as plt
-import pandas as pd
 import logging
 import numpy as np
 from abc import abstractmethod

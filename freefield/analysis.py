@@ -1,29 +1,14 @@
 import numpy as np
 from scipy import stats
-import pandas as pd
-from slab import Trialsequence
 
 
-def get_loctest_data(sequence):
-    """
-    Extract the data from a trialsequence and return them in a data frame. The trialsequence must be in the same format
-    that is returned by the localization test functions in the main module. This means that every element in the
-    conditions attribute must be an entry of the speaker table (pandas series) and every element of the data attribute
-    must be a tuple with (azimuth, elevation) of the subjects response in that trial.
-    Args:
-        sequence (instance of slab.Trialsequence): the sequence containing the targets and response data
-    Returns:
-        pandas DataFrame: target and response coordinates
-    """
-    if not isinstance(sequence, Trialsequence):
-        raise ValueError("Input must be slab trialsequence!")
-    data = pd.DataFrame(columns=["azi_target", "ele_target", "azi_response", "ele_response"])
-    for trial, response in zip(sequence.trials, sequence.data):
-        target = sequence.conditions[trial-1]
-        row = {"azi_target": target.azi, "ele_target": target.ele,
-               "azi_response": response[0], "ele_response": response[1]}
-        data = data.append(row, ignore_index=True)
-    return data
+def double_to_single_pole(azimuth_double, elevation_double):
+    azimuth_double, elevation_double = np.deg2rad(azimuth_double), np.deg2rad(elevation_double)
+    azimuth_single = np.arctan((np.cos(azimuth_double)*np.cos(elevation_double))/np.sin(azimuth_double))
+    elevation_single = np.arctan(np.sin(elevation_double)*np.cos(azimuth_double))
+    azimuth_single, elevation_single = np.rad2deg(azimuth_single), np.rad2deg(elevation_single)
+    print(f"double pole coordinates: azimuth={np.rad2deg(azimuth_double)}, elevation: {np.rad2deg(elevation_double)}\n"
+          f"single pole coordinates: azimuth={azimuth_single}, elevation: {elevation_single}")
 
 
 def mean_dir(data, speaker):

@@ -25,31 +25,31 @@ class Cameras:
         self.imsize = None
         self.model = PoseEstimator()
         self.calibration = dict()
+        self.n_cams = None
 
     def set_detection_threshold(self, threshold):
         self.model.threshold = threshold
 
     @abstractmethod
-    def acquire_images(self, n):
+    def acquire_images(self, n_images):
         pass
 
     @abstractmethod
     def halt(self):
         pass
 
-    def get_head_pose(self, convert=True, average_axis=1, n=1, resolution=1.0):
+    def get_head_pose(self, convert=True, average_axis=1, n_images=1, resolution=1.0):
         """Acquire n images and compute head pose (elevation and azimuth). If
         convert is True use the regression coefficients to convert
-        the camera into world coordinates
-        """
-        images = self.acquire_images(n)  # take images
-        pose = numpy.zeros(2, images.shape[2], images.shape[3])
+        the camera into world coordinates. """
+        images = self.acquire_images(n_images)  # take images
+        pose = numpy.zeros([2, images.shape[2], images.shape[3]])
         for i_cam in range(images.shape[3]):
             for i_image in range(images.shape[2]):
                 image = images[:, :, i_image, i_cam]  # get image from array
                 if resolution < 1.0:
                     image = self.change_image_res(image, resolution)
-                azimuth, elevation = self.model.pose_from_image(image)
+                azimuth, elevation, _ = self.model.pose_from_image(image)
                 pose[:, i_image, i_cam] = azimuth, elevation
         if convert:
             pose = self.convert_coordinates(pose)
@@ -67,29 +67,29 @@ class Cameras:
     def convert_coordinates(self, pose):
         if not self.calibration:
             raise ValueError("Camera has to be calibrated to convert coordinates")
-        for i_cam in range(pose.shape[2]):  # convert for each cam ...
-            for i_image in range(pose.shape[1]):
-                for i_angle, angle in enumerate(["azimuth", "elevation"]):  # ... and each angle
-                    a, b = self.calibration[f"cam{i_cam}"][angle]
-                    pose[i_angle, i_image, i_cam] = a + b * pose[i_angle, i_image, i_cam]
+        for i_cam in range(pose.shape[2]):  # convert all images for each cam ...
+            for i_angle, angle in enumerate(["azimuth", "elevation"]):  # ... and each angle
+                a, b = self.calibration[f"cam{i_cam}"][angle]["a"], self.calibration[f"cam{i_cam}"][angle]["b"]
+                pose[i_angle, :, i_cam] = a + b * pose[i_angle, :, i_cam]
         return pose
 
     def calibrate(self, world_coordinates, camera_coordinates, plot=True):
-        if not world_coordinates.shape == camera_coordinates.shape:
+        if not len(world_coordinates) == len(camera_coordinates):
             raise ValueError("Camera and world coordinates must be of the same shape!")
         if plot is True:
             fig, ax = plt.subplots(2)
             fig.suptitle("World vs Camera Coordinates")
-        for i_cam in range(camera_coordinates.shape[-1]):  # calibrate each camera
+        for i_cam in range(self.n_cams):  # calibrate each camera
             for i_angle, angle in enumerate(["azimuth", "elevation"]):  # ... and each angle
-                x, y = camera_coordinates[i_angle, :, i_cam], world_coordinates[i_angle, :, i_cam]
+                x = [c[i_angle, i_cam] for c in camera_coordinates]
+                y = [w[i_angle] for w in world_coordinates]
                 b, a, r, _, _ = stats.linregress(x, y)
                 if numpy.abs(r) < 0.85:
                     logging.warning(f"Correlation for camera {i_cam} {angle} is only {r}!")
-                self.calibration[f"cam{i_cam}"]["a"], self.calibration[f"cam{i_cam}"]["b"] = a, b
+                self.calibration[f"cam{i_cam}"] = {"a": a, "b": b}
                 if plot is True:
                     ax[i_angle].scatter(x, y)
-                    ax[i_angle].plot(x, x * b + a, linestyle="--", label=f"cam{i_cam}")
+                    ax[i_angle].plot(x, numpy.array(x) * b + a, linestyle="--", label=f"cam{i_cam}")
                     ax[i_angle].set_title(angle)
                     ax[i_angle].legend()
                     ax[i_angle].set_xlabel("camera coordinates in degree")
@@ -107,22 +107,22 @@ class FlirCams(Cameras):
         super().__init__()
         self.system = PySpin.System.GetInstance()
         self.cams = self.system.GetCameras()
-        self.ncams = self.cams.GetSize()
-        if self.ncams == 0:  # Finish if there are no cameras
+        self.n_cams = self.cams.GetSize()
+        if self.n_cams == 0:  # Finish if there are no cameras
             self.cams.Clear()  # Clear camera list before releasing system
             self.system.ReleaseInstance()  # Release system instance
             logging.warning('No camera found!')
         else:
             for cam in self.cams:
                 cam.Init()  # Initialize camera
-            logging.info(f"initialized {self.ncams} FLIR camera(s)")
-        imsize = self.acquire_images(n=1).shape[0:2]
+            logging.info(f"initialized {self.n_cams} FLIR camera(s)")
+        imsize = self.acquire_images(n_images=1).shape[0:2]
         self.imsize = imsize
 
-    def acquire_images(self, n=1):
+    def acquire_images(self, n_images=1):
         # TODO: ideas to make this faster -> only set nodemap once use async
         if self.imsize is not None:
-            image_data = numpy.zeros(self.imsize + (n, self.ncams), dtype="uint8")
+            image_data = numpy.zeros(self.imsize + (n_images, self.n_cams), dtype="uint8")
         else:
             image_data = None
         for cam in self.cams:  # start the cameras
@@ -141,7 +141,7 @@ class FlirCams(Cameras):
             acquisition_mode_continuous = node_acquisition_mode_continuous.GetValue()
             node_acquisition_mode.SetIntValue(acquisition_mode_continuous)
             cam.BeginAcquisition()
-        for i_image in range(n):
+        for i_image in range(n_images):
             for i_cam, cam in enumerate(self.cams):
                 time.sleep(0.1)
                 image_result = cam.GetNextImage()
@@ -156,7 +156,8 @@ class FlirCams(Cameras):
                 if image_data is not None:
                     image_data[:, :, i_image, i_cam] = image
                 else:
-                    image_data = image
+                    [cam.EndAcquisition() for cam in self.cams]
+                    return image
         [cam.EndAcquisition() for cam in self.cams]
         return image_data
 
@@ -183,20 +184,20 @@ class WebCams(Cameras):
             else:
                 stop = True
         logging.info("initialized %s webcams(s)" % (len(self.cams)))
-        self.ncams = len(self.cams)
-        self.imsize = self.acquire_images(n=1).shape[0:2]
+        self.n_cams = len(self.cams)
+        self.imsize = self.acquire_images(n_images=1).shape[0:2]
 
-    def acquire_images(self, n=1):
+    def acquire_images(self, n_images=1):
         """
             The webcam takes several pictures and reading only advances
             the buffer one step at a time, thus grab all images and only
             retrieve the latest one
         """
         if self.imsize is not None:
-            image_data = numpy.zeros(self.imsize + (n, self.ncams), dtype="uint8")
+            image_data = numpy.zeros(self.imsize + (n_images, self.n_cams), dtype="uint8")
         else:
             image_data = None
-        for i_image in range(n):
+        for i_image in range(n_images):
             for i_cam, cam in enumerate(self.cams):
                 for i in range(cv2.CAP_PROP_FRAME_COUNT):
                     cam.grab()
@@ -209,7 +210,7 @@ class WebCams(Cameras):
                     if image_data is not None:
                         image_data[:, :, i_image, i_cam] = image
                     else:
-                        image_data = image
+                        return image
         return image_data
 
     def halt(self):

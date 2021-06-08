@@ -4,8 +4,6 @@ import numpy as np
 import os
 import slab
 from freefield.tests.test_camera import VirtualCam
-freefield.initialize_setup(setup="dome", default_mode="play_rec", camera_type=None)
-freefield.Cameras = VirtualCam(n_cams=1)
 
 
 def test_wait():
@@ -15,33 +13,35 @@ def test_wait():
 
 
 def test_pick_speakers():
-    indices = [s.index for s in freefield.SPEAKERS]
-    coordinates = [(s.azimuth, s.elevation) for s in freefield.SPEAKERS]
-    for _ in range(100):
-        n_picks = numpy.random.randint(0, 47)
-        picks = numpy.random.choice(indices, n_picks, replace=False)
-        speakers = freefield.pick_speakers(picks)
-        assert len(speakers) == n_picks
-        assert [s.index for s in speakers].sort() == picks.sort()
-        idx = np.random.randint(47, size=2)
-        idx.sort()
-        picks = coordinates[idx[0]:idx[1]]
-        n_picks = len(picks)
-        speakers = freefield.pick_speakers(picks)
-        assert len(speakers) == n_picks
-        assert [(s.azimuth, s.elevation) for s in speakers].sort() == picks.sort()
+    for setup in ["dome", "arc"]:
+        freefield.initialize_setup(setup=setup, default_mode="play_rec", camera_type=None)
+        indices = [s.index for s in freefield.SPEAKERS]
+        coordinates = [(s.azimuth, s.elevation) for s in freefield.SPEAKERS]
+        for _ in range(100):
+            n_picks = numpy.random.randint(0, 47)
+            picks = numpy.random.choice(indices, n_picks, replace=False)
+            speakers = freefield.pick_speakers(picks)
+            assert len(speakers) == n_picks
+            assert [s.index for s in speakers].sort() == picks.sort()
+            idx = np.random.randint(47, size=2)
+            idx.sort()
+            picks = coordinates[idx[0]:idx[1]]
+            n_picks = len(picks)
+            speakers = freefield.pick_speakers(picks)
+            assert len(speakers) == n_picks
+            assert [(s.azimuth, s.elevation) for s in speakers].sort() == picks.sort()
 
 
-def test_shift_setup():
-    for _ in range(10):
-        index_number = np.random.randint(0, 47)
-        pre_shift = freefield.get_speaker(index_number=index_number)
-        delta = (np.round(np.random.uniform(-10, 10), 2), np.round(np.random.uniform(-10, 10), 2))
-        freefield.shift_setup(delta_azi=delta[0], delta_ele=delta[1])
-        post_shift = freefield.get_speaker(index_number=index_number)
-        assert (post_shift.azi.iloc[0] - pre_shift.azi.iloc[0]).round(2) == delta[0]
-        assert (post_shift.ele.iloc[0] - pre_shift.ele.iloc[0]).round(2) == delta[1]
-    freefield.initialize_setup(setup="dome", default_mode="play_rec", camera_type=None)
+def test_calibrate_camera():
+    freefield.initialize_setup(setup="dome", default_mode="cam_calibration", camera_type=None)
+    n_cams = numpy.random.randint(1, 4)
+    freefield.CAMERAS = VirtualCam(n_cams=n_cams)
+    n_reps, n_images = numpy.random.randint(1, 5), numpy.random.randint(1, 5)
+    speakers = freefield.all_leds()
+    freefield.calibrate_camera(speakers, n_reps, n_images)
+    cams = freefield.CAMERAS.calibration.keys()
+    assert len(cams) == n_cams
+
 
 def test_set_signal_and_speaker():
     # TODO: test applying calibration
@@ -53,11 +53,13 @@ def test_set_signal_and_speaker():
             for speaker in speakers:
                 freefield.set_signal_and_speaker(signal, speaker, proc)
 
+
 def test_get_recording_delay():
     delay = freefield.get_recording_delay()
     assert delay == 227
     delay = freefield.get_recording_delay(play_from="RX8", rec_from="RP2")
     assert delay == 316
+
 
 def test_check_pose():
     assert freefield.check_pose(var=100) is True
@@ -118,6 +120,6 @@ def test_equalize_speakers():
 
 
 def test_check_equialization():
-signal = slab.Sound.whitenoise()
-freefield.check_equalization(signal, speakers="all", max_diff=5, db_thresh=80)
+    signal = slab.Sound.whitenoise()
+    freefield.check_equalization(signal, speakers="all", max_diff=5, db_thresh=80)
 pass

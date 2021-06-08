@@ -75,6 +75,7 @@ class Speaker:
 
 def read_speaker_table(setup="dome"):
     global SPEAKERS
+    SPEAKERS = []
     if setup not in ["dome", "arc"]:
         raise ValueError("Setup must be 'dome' or 'arc'!")
     table_file = DIR / 'data' / 'tables' / Path(f'speakertable_{setup}.txt')
@@ -329,77 +330,58 @@ def play_warning_sound(duration=.5, speaker=23):
     play_and_wait()
 
 
-def calibrate_camera(targets, n_reps=1, n_images=5):
+def calibrate_camera(speakers, n_reps=1, n_images=5):
     """
     Calibrate all cameras by lighting up a series of LEDs and estimate the pose when the head is pointed
     towards the currently lit LED. This results in a list of world and camera coordinates which is used to
     calibrate the cameras.
 
     Args:
-        targets (pandas DataFrame): rows from the speaker table. The speakers must have a LED attached
+        speakers (): rows from the speaker table. The speakers must have a LED attached
         n_reps(int): number of repetitions for each target
         n_images(int): number of images taken for each head pose estimate
     Returns:
         pandas DataFrame: camera and world coordinates acquired (calibration is performed automatically)
     """
-    if not isinstance(CAMERAS, camera.Cameras):
-        raise ValueError("Camera must be initialized before calibration!")
-    coords = pd.DataFrame(columns=["azi_cam", "azi_world", "ele_cam", "ele_world", "cam", "frame", "n"])
+    # TODO: save the camera calibration in a temporary directory
     if not PROCESSORS.mode == "cam_calibration":  # initialize setup in camera calibration mode
         PROCESSORS.initialize_default(mode="cam_calibration")
-    targets = [targets.loc[i] for i in targets.index]
-    seq = slab.Trialsequence(n_reps=n_reps, conditions=targets)
-    for trial in seq:
-        logging.info(f"trial nr {seq.this_n}: \n target at elevation of {trial.ele} and azimuth of {trial.azi}")
-        PROCESSORS.write(tag="bitmask", value=int(trial.bit), procs=trial.digital_proc)
+    if not all(isinstance(s, Speaker) for s in speakers):
+        speakers = pick_speakers(speakers)
+    world_coordinates = [(s.azimuth, s.elevation) for s in speakers]
+    camera_coordinates = []
+    seq = slab.Trialsequence(n_reps=n_reps, conditions=speakers)
+    for speaker in seq:
+        write(tag="bitmask", value=int(speaker.digital_channel), procs=speaker.digital_proc)
         wait_for_button()
-        pose = CAMERAS.get_headpose(average=False, convert=False, n=n_images)
-        pose.insert(0, "n", seq.this_n)
-        pose = pose.rename(columns={"azi": "azi_cam", "ele": "ele_cam"})
-        pose.insert(2, "ele_world", trial.ele)
-        pose.insert(4, "azi_world", trial.azi)
-        pose = pose.dropna()
-        coords = coords.append(pose, ignore_index=True, sort=True)
-        PROCESSORS.write(tag="bitmask", value=0, procs=trial.digital_proc)
-    CAMERAS.calibrate(coords, plot=True)
-    return coords
+        camera_coordinates.append(CAMERAS.get_head_pose(average_axis=1, convert=False, n_images=n_images))
+        write(tag="bitmask", value=0, procs=speaker.digital_proc)
+    CAMERAS.calibrate(world_coordinates, camera_coordinates, plot=True)
 
 
-def calibrate_camera_no_visual(targets, n_reps=1, n_images=5):
+def calibrate_camera_no_visual(speakers, n_reps=1, n_images=5):
     """
     This is an alteration of calibrate_camera for cases in which LEDs are
     not available. The list of targets is repeated n_reps times in the
-    exact same order without any reandomization. When the whole setup is
+    exact same order without any randomization. When the whole setup is
     equipped with LEDs this function should be removed
     """
-    if not isinstance(CAMERAS, camera.Cameras):
-        raise ValueError("Camera must be initialized before calibration!")
-    coords = pd.DataFrame(columns=["azi_cam", "azi_world", "ele_cam", "ele_world", "cam", "frame", "n"])
     if not PROCESSORS.mode == "cam_calibration":
-        PROCESSORS.initialize( ['RP2', 'RP2',  DIR/'data'/'rcx'/'button.rcx'], True, "GB")
-    # this is a bit of a hack: every trial is it's own condition and they are sorted in the end
-    targets = pd.concat([targets]*n_reps)
-    targets = targets.reset_index()
-    targets = [targets.loc[i] for i in targets.index]
-    seq = slab.Trialsequence(n_reps=1, conditions=targets)
-    seq.trials.sort()
-    for trial in seq:
-        logging.info(f"trial nr {seq.this_n}: \n target at elevation of {trial.ele} and azimuth of {trial.azi}")
+        PROCESSORS.initialize_default(mode="cam_calibration")
+    if not all(isinstance(s, Speaker) for s in speakers):
+        speakers = pick_speakers(speakers)
+    world_coordinates = [(s.azimuth, s.elevation) for s in speakers]
+    camera_coordinates = []
+    speakers = speakers * n_reps
+    for speaker in speakers:
+        write(tag="bitmask", value=int(speaker.digital_channel), procs=speaker.digital_proc)
         wait_for_button()
-        pose = CAMERAS.get_headpose(average=False, convert=False, n=n_images)
-        pose.insert(0, "n", seq.this_n)
-        pose = pose.rename(columns={"azi": "azi_cam", "ele": "ele_cam"})
-        pose.insert(2, "ele_world", trial.ele)
-        pose.insert(4, "azi_world", trial.azi)
-        pose = pose.dropna()
-        coords = coords.append(pose, ignore_index=True, sort=True)
-    CAMERAS.calibrate(coords, plot=True)
-    return coords
+        camera_coordinates.append(CAMERAS.get_head_pose(average_axis=1, convert=False, n_images=n_images))
+        write(tag="bitmask", value=0, procs=speaker.digital_proc)
+    CAMERAS.calibrate(world_coordinates, camera_coordinates, plot=True)
 
 
-
-
-def localization_test_freefield(targets, duration=0.5, n_reps=1, n_images=5, visual=False):
+def localization_test_freefield(speakers, duration=0.5, n_reps=1, n_images=5, visual=False):
     """
     Run a basic localization test where the same sound is played from different
     speakers in randomized order, without playing the same position twice in
@@ -418,25 +400,26 @@ def localization_test_freefield(targets, duration=0.5, n_reps=1, n_images=5, vis
     Returns:
         instance of slab.Trialsequence: the response is stored in the data attribute as tuples with (azimuth, elevation)
     """
+    if not all(isinstance(s, Speaker) for s in speakers):
+        speakers = pick_speakers(speakers)
     if not isinstance(CAMERAS, camera.Cameras) and CAMERAS.calibration is not None:
         raise ValueError("Camera must be initialized and calibrated before localization test!")
     if not PROCESSORS.mode == "loctest_freefield":
         PROCESSORS.initialize_default(mode="loctest_freefield")
     PROCESSORS.write(tag="playbuflen", value=int(slab.signal._default_samplerate*duration), procs=["RX81", "RX82"])
     if visual is True:
-        if targets.bit.isnull.sum():
+        if not all([s.digital_channel for s in speakers]):
             raise ValueError("All speakers must have a LED attached for a test with visual cues")
-    targets = [targets.loc[i] for i in targets.index]  # make list from data frame
-    seq = slab.Trialsequence(targets, n_reps, kind="non_repeating")
+    seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
     play_start_sound()
-    for trial in seq:
+    for speaker in seq:
         wait_for_button()
         while check_pose(fix=[0, 0]) is None:  # check if head is in position
             play_warning_sound()
             wait_for_button()
         sound = slab.Sound.pinknoise(duration=duration)
-        set_signal_and_speaker(signal=sound.data.flatten(), speaker=trial.index_number)
-        seq = _loctest_trial(trial, seq, visual, n_images)
+        pose = _loctest_trial(speaker, sound, visual, n_images)
+        seq.add_response(pose)
     play_start_sound()
     return seq
 
@@ -492,17 +475,17 @@ def localization_test_headphones(targets, signals, n_reps=1, n_images=5, visual=
     return seq
 
 
-def _loctest_trial(trial, seq, visual, n_images):
+def _loctest_trial(trial, sound, visual, n_images):
     """do a single trial in a localization test experiment: turn on LED (optional), play and wait for button press,
      get head pose, turn led of, write response in trial sequence and return the sequence"""
     if visual is True:  # turn LED on
         PROCESSORS.write(tag="bitmask", value=trial.bit, procs=trial.digital_proc)
+    set_signal_and_speaker(signal=sound.data.flatten(), speaker=speaker.index)
     play_and_wait_for_button()
     pose = CAMERAS.get_headpose(convert=True, average=True, n=n_images)
     if visual is True:  # turn LED off
         PROCESSORS.write(tag="bitmask", value=0, procs=trial.digital_proc)
-    seq.add_response(pose)
-    return seq
+    return pose
 
 
 def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10, db_tresh=80,

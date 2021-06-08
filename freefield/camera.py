@@ -80,13 +80,14 @@ class Cameras:
             fig, ax = plt.subplots(2)
             fig.suptitle("World vs Camera Coordinates")
         for i_cam in range(self.n_cams):  # calibrate each camera
+            self.calibration[f"cam{i_cam}"] = {"azimuth": {}, "elevation": {}}
             for i_angle, angle in enumerate(["azimuth", "elevation"]):  # ... and each angle
                 x = [c[i_angle, i_cam] for c in camera_coordinates]
                 y = [w[i_angle] for w in world_coordinates]
                 b, a, r, _, _ = stats.linregress(x, y)
                 if numpy.abs(r) < 0.85:
                     logging.warning(f"Correlation for camera {i_cam} {angle} is only {r}!")
-                self.calibration[f"cam{i_cam}"] = {"a": a, "b": b}
+                self.calibration[f"cam{i_cam}"][angle] = {"a": a, "b": b}
                 if plot is True:
                     ax[i_angle].scatter(x, y)
                     ax[i_angle].plot(x, numpy.array(x) * b + a, linestyle="--", label=f"cam{i_cam}")

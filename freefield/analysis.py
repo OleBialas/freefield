@@ -33,8 +33,8 @@ def mean_dir(data, speaker):
     # sines, cosines = _sines_cosines(data, speaker)
     # return numpy.rad2deg(sines.sum(axis=1) / cosines.sum(axis=1)).flatten()
     # use regular addition with corrected angles:
-    idx = np.where(data[:,1] == speaker)
-    return data[idx,2:4].mean(axis=1)
+    idx = np.where(data[:, 1] == speaker)
+    return data[idx, 2:4].mean(axis=1)
 
 
 def mad(data, speaker, ref_dir=None):

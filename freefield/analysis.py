@@ -4,11 +4,8 @@ from scipy import stats
 
 def double_to_single_pole(azimuth_double, elevation_double):
     azimuth_double, elevation_double = np.deg2rad(azimuth_double), np.deg2rad(elevation_double)
-    azimuth_single = np.arctan((np.cos(azimuth_double)*np.cos(elevation_double))/np.sin(azimuth_double))
-    elevation_single = np.arctan(np.sin(elevation_double)*np.cos(azimuth_double))
-    azimuth_single, elevation_single = np.rad2deg(azimuth_single), np.rad2deg(elevation_single)
-    print(f"double pole coordinates: azimuth={np.rad2deg(azimuth_double)}, elevation: {np.rad2deg(elevation_double)}\n"
-          f"single pole coordinates: azimuth={azimuth_single}, elevation: {elevation_single}")
+    azimuth_single = np.arctan(np.sin(azimuth_double) / np.cos(azimuth_double) / np.cos(elevation_double))
+    return np.rad2deg(azimuth_single)
 
 
 def mean_dir(data, speaker):

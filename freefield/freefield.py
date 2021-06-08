@@ -5,6 +5,7 @@ from copy import deepcopy
 import pickle
 from dataclasses import dataclass
 import logging
+import numpy
 import numpy as np
 import slab
 from matplotlib import pyplot as plt
@@ -13,15 +14,14 @@ from freefield import DIR, Processors, camera
 logging.basicConfig(level=logging.INFO)
 slab.Signal.set_default_samplerate(48828)  # default samplerate for generating sounds, filters etc.
 # Initialize global variables:
-CAMERAS = None
+CAMERAS = camera.Cameras()
 PROCESSORS = Processors()
 EQUALIZATIONFILE = Path()
 EQUALIZATIONDICT = {}  # calibration to equalize levels
-TABLE = pd.DataFrame()  # numbers and coordinates of all loudspeakers
+SPEAKERS = []  # list of all the loudspeakers in the active setup
 
 
-def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connection="GB", camera_type=None,
-                     face_detection_tresh=.9):
+def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connection="GB", camera_type=None):
     """
     Initialize the processors and load table and calibration for setup.
 
@@ -41,7 +41,7 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
     """
 
     # TODO: put level and frequency equalization in one common file
-    global EQUALIZATIONDICT, EQUALIZATIONFILE, TABLE, PROCESSORS, CAMERAS
+    global EQUALIZATIONDICT, EQUALIZATIONFILE, PROCESSORS, CAMERAS
     # initialize processors
     if bool(proc_list) == bool(default_mode):
         raise ValueError("You have to specify a proc_list OR a default_mode")
@@ -50,8 +50,8 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
     elif default_mode is not None:
         PROCESSORS.initialize_default(default_mode)
     if camera_type is not None:
-        CAMERAS = camera.initialize_cameras(camera_type, face_detection_tresh=face_detection_tresh)
-    TABLE = read_table(setup)  # load the table containing the information about the loudspeakers
+        CAMERAS = camera.initialize_cameras(camera_type)
+    read_speaker_table(setup)  # load the table containing the information about the loudspeakers
     logging.info(f'Speaker configuration set to {setup}.')
     EQUALIZATIONFILE = DIR / 'data' / Path(f'calibration_{setup}.pkl')
     if EQUALIZATIONFILE.exists():
@@ -62,26 +62,27 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
         logging.warning('Setup not calibrated...')
 
 
-def read_table(setup="dome"):
-    if setup not in ["dome", "arc"]:
-        raise ValueError("Setup must be 'dome' or 'arc'!")
-    table_file = DIR / 'data' / 'tables' / Path(f'speakertable_{setup}.txt')
-    table = pd.read_csv(table_file, dtype={"index_number": "Int64", "channel": "Int64", "analog_proc": "category",
-                                           "azi": float, "ele": float, "bit": "Int64", "digital_proc": "category"})
-    return table
-
-
 @dataclass(frozen=True)
 class Speaker:
     index: int  # the index number of the speaker
-    channel: int  # the number of the analog channel to which the speaker is attached
+    analog_channel: int  # the number of the analog channel to which the speaker is attached
     analog_proc: str  # the processor to whose analog I/O the speaker is attached
     digital_proc: str  # the processor to whose digital I/O the speaker's LED is attached
     azimuth: float  # the azimuth angle of the speaker
     elevation: float  # the azimuth angle of the speaker
-    bitmask: int  # the integer value of the bitmask for turning on the speaker's LED
+    digital_channel: int  # the int value of the bitmask for the digital channel to which the speakers LED is attached
 
 
+def read_speaker_table(setup="dome"):
+    global SPEAKERS
+    if setup not in ["dome", "arc"]:
+        raise ValueError("Setup must be 'dome' or 'arc'!")
+    table_file = DIR / 'data' / 'tables' / Path(f'speakertable_{setup}.txt')
+    table = numpy.loadtxt(table_file, skiprows=1, delimiter=",", dtype=str)
+    for row in table:
+        SPEAKERS.append(Speaker(index=int(row[0]), analog_channel=int(row[1]), analog_proc=row[2],
+                                azimuth=float(row[3]), digital_channel=int(row[5]) if row[5] else None,
+                                elevation=float(row[4]), digital_proc=row[6] if row[6] else None))
 
 
 # Wrappers for Processor operations read, write, trigger and halt:
@@ -92,6 +93,7 @@ def write(tag, value, procs):
 def read(tag, proc, n_samples=1):
     value = PROCESSORS.read(tag=tag, proc=proc, n_samples=n_samples)
     return value
+
 
 def play(kind='zBusA', proc=None):
     PROCESSORS.trigger(kind=kind, proc=proc)
@@ -140,74 +142,34 @@ def play_and_wait_for_button() -> None:
     wait_for_button()
 
 
-def get_speaker(index_number=None, coordinates=None):
+def pick_speakers(picks):
     """
     Either return the speaker at given coordinates (azimuth, elevation) or the
     speaker with a specific index number.
 
     Args:
-        index_number (int): index number of the speaker
+        index (int): index number of the speaker
         coordinates (list of floats): azimuth and elevation of the speaker
 
     Returns:
-        int: index number of the speaker (0 to 47)
-        int: channel of the processor the speaker is attached to (1 to 24)
-        int: index of the processor the speaker is attached to (1 or 2)
-        float: azimuth angle of the target speaker
-        float: elevation angle of the target speaker
-        int: integer value of the bitmask for the LED at speaker position
-        int: index of the processor the LED is attached to (1 or 2)
     """
-    if TABLE.empty:
-        raise ValueError("Speaker table not found. Initialize the setup first")
-    row = pd.DataFrame()
-    if (index_number is None and coordinates is None) or (index_number is not None and coordinates is not None):
-        raise ValueError("You have to specify a the index OR coordinates of the speaker!")
-    if index_number is not None:
-        row = TABLE.loc[(TABLE.index_number == index_number)]
-    elif coordinates is not None:
-        if len(coordinates) != 2:
-            raise ValueError("Coordinates must have two elements: azimuth and elevation!")
-        row = TABLE.loc[(TABLE.azi == coordinates[0]) & (TABLE.ele == coordinates[1])]
-    if len(row) > 1:
-        logging.warning("More or then one row returned!")
-    elif len(row) == 0:
-        logging.warning("No entry found that matches the criterion!")
-    return row
-
-
-def get_speaker_list(speaker_list):
-    """
-    Specify a list of either indices or coordinates and call get_speaker()
-    for each element of the list.
-
-    Args:
-        speaker_list (list or list of lists): indices or coordinates of speakers.
-
-    Returns:
-        list of lists: rows from _table corresponding to the list.
-            each sub list contains all the variable returned by get_speaker()
-    """
-    speakers = pd.DataFrame()
-    if (all(isinstance(x, int) for x in speaker_list) or  # list contains indices
-            all(isinstance(x, np.int64) for x in speaker_list)):
-        speakers = [get_speaker(index_number=i) for i in speaker_list]
-        speakers = [df.set_index('index_number') for df in speakers]
-        speakers = pd.concat(speakers)
-    elif (all(isinstance(x, tuple) for x in speaker_list) or  # list contains coords
-          all(isinstance(x, list) for x in speaker_list)):
-        speakers = [get_speaker(coordinates=i) for i in speaker_list]
-        speakers = [df.set_index('index_number') for df in speakers]
-        speakers = pd.concat(speakers)
-    if len(speaker_list) == 0:
-        logging.warning("No speakers found that match the criteria!")
-    speakers = speakers.reset_index()
+    if isinstance(picks, (list, numpy.ndarray)):
+        if all(isinstance(p, (int, numpy.int64, numpy.int32)) for p in picks):
+            speakers = [s for s in SPEAKERS if s.index in picks]
+        else:
+            speakers = [s for s in SPEAKERS if (s.azimuth, s.elevation) in picks]
+    elif isinstance(picks, (int, numpy.int)):
+        speakers = [s for s in SPEAKERS if s.index == picks]
+    else:
+        speakers = [s for s in SPEAKERS if (s.azimuth == picks[0] and s.elevation == picks[1])]
+    if len(speakers) == 0:
+        print("no speaker found that matches the criterion - returning empty list")
     return speakers
 
 
 def all_leds():
     # Temporary hack: return all speakers from the table which have a LED attached
-    return TABLE.dropna()
+    return [s for s in SPEAKERS if s.digital_channel is not None]
 
 
 def shift_setup(delta_azi, delta_ele):
@@ -222,10 +184,12 @@ def shift_setup(delta_azi, delta_ele):
         delta_azi (float): azimuth by which the setup is shifted, positive value means shifting right
         delta_ele (float): elevation by which the setup is shifted, positive value means shifting up
     """
-    global TABLE
-    TABLE.azi += delta_azi  # azimuth
-    TABLE.ele += delta_ele  # elevation
-    logging.info(f"shifting the loudspeaker array by {delta_azi} in azimuth and {delta_ele} in elevation")
+    # TODO: this is not how it works
+    global SPEAKERS
+    for speaker in SPEAKERS:
+        speaker.azimuth += delta_azi  # azimuth
+        speaker.elevation += delta_ele  # elevation
+    print(f"shifting the loudspeaker array by {delta_azi} in azimuth and {delta_ele} in elevation")
 
 
 def set_signal_and_speaker(signal, speaker, calibrate=True):
@@ -239,24 +203,23 @@ def set_signal_and_speaker(signal, speaker, calibrate=True):
             calibrate (bool): if True (=default) apply loudspeaker equalization
     """
     signal = slab.Sound(signal)
-    if isinstance(speaker, (list, tuple)):
-        speaker = get_speaker(coordinates=speaker)
-    elif isinstance(speaker, (int, np.int64, np.int32)):
-        speaker = get_speaker(index_number=speaker)
-    elif isinstance(speaker, pd.Series):
+    if isinstance(speaker, (list, tuple, numpy.ndarray)):
+        speaker = pick_speakers(coordinates=speaker)[0]
+    elif isinstance(speaker, (int, numpy.int)):
+        speaker = pick_speakers(index=speaker)[0]
+    elif isinstance(speaker, Speaker):
         pass
     else:
-        raise ValueError(f"Input {speaker} for argument speaker is not valid! \n"
-                         "Specify either an index number or coordinates of the speaker!")
+        raise ValueError(f"Input {speaker} for argument speaker is not valid!")
     if calibrate:
         logging.info('Applying calibration.')  # apply level and frequency calibration
         to_play = apply_equalization(signal, speaker)
     else:
         to_play = signal
-    PROCESSORS.write(tag='chan', value=speaker.channel.iloc[0], procs=speaker.analog_proc.iloc[0])
-    PROCESSORS.write(tag='data', value=to_play.data, procs=speaker.analog_proc.iloc[0])
-    other_procs = list(TABLE["analog_proc"].unique())
-    other_procs.remove(speaker.analog_proc.iloc[0])  # set the analog output of other procs to non existent number 99
+    PROCESSORS.write(tag='chan', value=speaker.analog_channel, procs=speaker.analog_proc)
+    PROCESSORS.write(tag='data', value=to_play.data, procs=speaker.analog_proc)
+    other_procs = set([s.analog_proc for s in SPEAKERS])
+    other_procs.remove(speaker.analog_proc)  # set the analog output of other procs to non existent number 99
     PROCESSORS.write(tag='chan', value=99, procs=other_procs)
 
 

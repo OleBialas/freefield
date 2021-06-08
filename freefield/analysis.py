@@ -8,6 +8,26 @@ def double_to_single_pole(azimuth_double, elevation_double):
     return np.rad2deg(azimuth_single)
 
 
+def single_pole_to_polar(azimuth, elevation):
+    phi = -1 * azimuth
+    theta = elevation - 90
+    return phi, theta
+
+
+def polar_to_single_pole(phi, theta):
+    azimuth = phi * -1
+    elevation = theta + 90
+    return azimuth, elevation
+
+
+def polar_to_cartesian(phi, theta):
+    phi, theta = np.deg2rad(phi), np.deg2rad(theta)
+    x = np.sin(theta)*np.cos(phi)
+    y = np.sin(theta)*np.sin(phi)
+    z = np.cos(theta)
+    return x, y, z
+
+
 def mean_dir(data, speaker):
     # use vector addition with uncorrected angles:
     # sines, cosines = _sines_cosines(data, speaker)

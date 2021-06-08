@@ -148,8 +148,7 @@ def pick_speakers(picks):
     speaker with a specific index number.
 
     Args:
-        index (int): index number of the speaker
-        coordinates (list of floats): azimuth and elevation of the speaker
+        picks (list of lists, list, int): index number of the speaker
 
     Returns:
     """
@@ -199,18 +198,12 @@ def set_signal_and_speaker(signal, speaker, calibrate=True):
 
         Args:
             signal (array-like): signal to load to the buffer, must be one-dimensional
-            speaker : speaker to play the signal from, can be index number or [azimuth, elevation]
+            speaker (Speaker, int) : speaker to play the signal from, can be index number or [azimuth, elevation]
             calibrate (bool): if True (=default) apply loudspeaker equalization
     """
     signal = slab.Sound(signal)
-    if isinstance(speaker, (list, tuple, numpy.ndarray)):
-        speaker = pick_speakers(coordinates=speaker)[0]
-    elif isinstance(speaker, (int, numpy.int)):
-        speaker = pick_speakers(index=speaker)[0]
-    elif isinstance(speaker, Speaker):
-        pass
-    else:
-        raise ValueError(f"Input {speaker} for argument speaker is not valid!")
+    if not isinstance(speaker, Speaker):
+        speaker = pick_speakers(speaker)[0]
     if calibrate:
         logging.info('Applying calibration.')  # apply level and frequency calibration
         to_play = apply_equalization(signal, speaker)
@@ -238,12 +231,8 @@ def apply_equalization(signal, speaker, level=True, frequency=True):
         return signal
     else:
         signal = slab.Sound(signal)
-        if isinstance(speaker, (int, np.int64, np.int32)):
-            speaker = get_speaker(index_number=speaker)
-        elif isinstance(speaker, (list, tuple)):
-            speaker = get_speaker(coordinates=speaker)
-        elif not isinstance(speaker, (pd.Series, pd.DataFrame)):
-            raise ValueError("Argument speaker must be a index number, coordinates or table row of a speaker!")
+        if not isinstance(speaker, Speaker):
+            speaker = pick_speakers(speaker)[0]
         speaker_calibration = EQUALIZATIONDICT[str(speaker.index_number.iloc[0])]
         calibrated_signal = deepcopy(signal)
         if level:
@@ -290,14 +279,13 @@ def get_recording_delay(distance=1.6, sample_rate=48828, play_from=None, rec_fro
     return n_sound_traveling + n_da + n_ad
 
 
-def get_headpose(convert=True, average=True, n=1):
+def get_head_pose(n_images=1):
     """Wrapper for the get headpose method of the camera class"""
-    if isinstance(CAMERAS, camera.Cameras):
-        azi, ele = CAMERAS.get_headpose(convert=convert, average=average, n=n)
-        return azi, ele
+    if not isinstance(CAMERAS, camera.Cameras):
+        raise ValueError("Cameras are not initialized!")
     else:
-        logging.warning("Cameras were not initialized...")
-        return False
+        azi, ele = CAMERAS.get_head_pose(convert=True, average_axis=(1, 2), n_images=n_images)
+    return azi, ele
 
 
 def check_pose(fix=(0, 0), var=10):
@@ -310,24 +298,16 @@ def check_pose(fix=(0, 0), var=10):
     Returns:
         bool: True if difference between pose and fix is smaller than var, False otherwise
     """
-
-    if isinstance(CAMERAS, camera.Cameras):
-        pose = CAMERAS.get_headpose(convert=True, average=True, n=1)
-        if isinstance(pose, pd.DataFrame):  # TODO: this is a hack
-            return False
-        else:
-            azi, ele = pose
-        if (azi is np.nan) or (azi is None):
-            azi = fix[0]
-        if (ele is np.nan) or (ele is None):
-            ele = fix[1]
-        if np.abs(azi - fix[0]) > var or np.abs(ele - fix[1]) > var:
-            return False
-        else:
-            return True
-    else:
-        logging.warning("Cameras were not initialized...")
+    # TODO: what happens if no image is obtained?
+    azi, ele = get_head_pose(n_images=1)
+    if (azi is np.nan) or (azi is None):
+        azi = fix[0]
+    if (ele is np.nan) or (ele is None):
+        ele = fix[1]
+    if np.abs(azi - fix[0]) > var or np.abs(ele - fix[1]) > var:
         return False
+    else:
+        return True
 
 
 # functions implementing complete procedures:

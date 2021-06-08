@@ -14,8 +14,7 @@ def test_wait():
     freefield.wait_to_finish_playing()
 
 
-def test_get_speaker():
-
+def test_pick_speakers():
     indices = [s.index for s in freefield.SPEAKERS]
     coordinates = [(s.azimuth, s.elevation) for s in freefield.SPEAKERS]
     for _ in range(100):

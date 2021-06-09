@@ -47,9 +47,29 @@ def test_calibrate_camera():
         freefield.calibrate_camera_no_visual(speakers, n_reps, n_images)
 
 
+def test_localization_test():
+    freefield.initialize_setup(setup="dome", default_mode="loctest_freefield", camera_type=None)
+    freefield.CAMERAS = VirtualCam(n_cams=numpy.random.randint(1,4))
+    freefield.calibrate_camera(freefield.all_leds(), n_reps=1, n_images=1)
+    for _ in range(5):
+        n_speakers = numpy.random.randint(2, 10)
+        speakers = numpy.random.choice(freefield.SPEAKERS, n_speakers, replace=False)
+        duration = numpy.random.uniform(0, 2)
+        n_reps = numpy.random.randint(1, 5)
+        n_images = numpy.random.randint(1, 5)
+        seq = freefield.localization_test_freefield(speakers, duration, n_reps, n_images, visual=False)
+        assert len(seq.data) == len(speakers)*n_reps
+        signals = [slab.Binaural.whitenoise()]*n_speakers
+        seq = freefield.localization_test_headphones(speakers, signals, n_reps, n_images, visual=False)
+        assert len(seq.data) == len(speakers)*n_reps
+        speakers = freefield.all_leds()
+        seq = freefield.localization_test_freefield(speakers, duration, n_reps, n_images, visual=True)
+        assert len(seq.data) == len(speakers)*n_reps
+
+
 def test_set_signal_and_speaker():
     signals = [np.random.random(size=1000), slab.Sound(np.random.random(size=1000))]
-    speakers = [np.random.randint(0, 47), [0, 0]]
+    speakers = range(47)
     procs = ["RX81", "RX82"]
     for signal in signals:
         for proc in procs:

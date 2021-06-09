@@ -282,8 +282,8 @@ def get_recording_delay(distance=1.6, sample_rate=48828, play_from=None, rec_fro
 
 def get_head_pose(n_images=1):
     """Wrapper for the get headpose method of the camera class"""
-    if not isinstance(CAMERAS, camera.Cameras):
-        raise ValueError("Cameras are not initialized!")
+    if not CAMERAS.n_cams:
+        raise ValueError("No cameras initialized!")
     else:
         azi, ele = CAMERAS.get_head_pose(convert=True, average_axis=(1, 2), n_images=n_images)
     return azi, ele
@@ -402,11 +402,8 @@ def localization_test_freefield(speakers, duration=0.5, n_reps=1, n_images=5, vi
     """
     if not all(isinstance(s, Speaker) for s in speakers):
         speakers = pick_speakers(speakers)
-    if not isinstance(CAMERAS, camera.Cameras) and CAMERAS.calibration is not None:
-        raise ValueError("Camera must be initialized and calibrated before localization test!")
     if not PROCESSORS.mode == "loctest_freefield":
         PROCESSORS.initialize_default(mode="loctest_freefield")
-    PROCESSORS.write(tag="playbuflen", value=int(slab.signal._default_samplerate*duration), procs=["RX81", "RX82"])
     if visual is True:
         if not all([s.digital_channel for s in speakers]):
             raise ValueError("All speakers must have a LED attached for a test with visual cues")
@@ -418,19 +415,28 @@ def localization_test_freefield(speakers, duration=0.5, n_reps=1, n_images=5, vi
             play_warning_sound()
             wait_for_button()
         sound = slab.Sound.pinknoise(duration=duration)
-        pose = _loctest_trial(speaker, sound, visual, n_images)
+        write(tag="playbuflen", value=sound.n_samples, procs=["RX81", "RX82"])
+        if visual is True:  # turn LED on
+            write(tag="bitmask", value=speaker.digital_channel, procs=speaker.digital_proc)
+        set_signal_and_speaker(signal=sound.data.flatten(), speaker=speaker)
+        play_and_wait_for_button()
+        pose = get_head_pose(n_images=n_images)
+        if visual is True:  # turn LED off
+            write(tag="bitmask", value=0, procs=speaker.digital_proc)
         seq.add_response(pose)
     play_start_sound()
+    # change conditions property so it contains the only azimuth and elevation of the source
+    seq.conditions = numpy.array([(s.azimuth, s.elevation) for s in seq.conditions])
     return seq
 
 
-def localization_test_headphones(targets, signals, n_reps=1, n_images=5, visual=False):
+def localization_test_headphones(speakers, signals, n_reps=1, n_images=5, visual=False):
     """
     Run a basic localization test where previously recorded/generated binaural sound are played via headphones.
     The procedure is the same as in localization_test_freefield().
 
     Args:
-        targets : rows from the speaker table or index numbers of the speakers.
+        speakers : rows from the speaker table or index numbers of the speakers.
         signals (array-like) : binaural sounds that are played. Must be ordered corresponding to the targets (first
             element of signals is played for the first row of targets etc.). If the elements of signals are
             instances of slab.Precomputed, a random one is drawn in each trial (useful if you don't want to repeat
@@ -441,51 +447,43 @@ def localization_test_headphones(targets, signals, n_reps=1, n_images=5, visual=
     Returns:
         instance of slab.Trialsequence: the response is stored in the data attribute as tuples with (azimuth, elevation)
     """
-
-    if not isinstance(CAMERAS, camera.Cameras) and CAMERAS.calibration is not None:
-        raise ValueError("Camera must be initialized and calibrated before localization test!")
     if not PROCESSORS.mode == "loctest_headphones":
         PROCESSORS.initialize_default(mode="loctest_headphones")
-    if not len(signals) == len(targets):
+    if not len(signals) == len(speakers):
         raise ValueError("There must be one signal for each target!")
+    if not all(isinstance(sig, (slab.Binaural, slab.Precomputed)) for sig in signals):
+        raise ValueError("Signal argument must be an instance of slab.Binaural or slab.Precomputed.")
     if visual is True:
-        if targets.bit.isnull.sum():
+        if not all([s.digital_channel for s in speakers]):
             raise ValueError("All speakers must have a LED attached for a test with visual cues")
-    targets = [targets.loc[i] for i in targets.index]  # make list from data frame
-    seq = slab.Trialsequence(targets, n_reps, kind="non_repeating")
+    seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
     play_start_sound()
-    for trial in seq:
-        signal = signals[trial.index_number]  # get the signal corresponding to the target
+    for speaker in seq:
+        signal = signals[seq.trials[seq.this_n]-1]  # get the signal corresponding to the target
         if isinstance(signal, slab.Precomputed):  # if signal is precomputed, pick a random one
             signal = signal[np.random.randint(len(signal))]
-        try:
-            signal = slab.Binaural(signal)
-        except IndexError:
-            logging.warning("Binaural sounds must have exactly two channels!")
+            try:
+                signal = slab.Binaural(signal)
+            except IndexError:
+                logging.warning("Binaural sounds must have exactly two channels!")
         wait_for_button()
         while check_pose(fix=[0, 0]) is None:  # check if head is in position
             play_warning_sound()
             wait_for_button()
-        # write sound into buffer
-        PROCESSORS.write(tag="playbuflen", value=signal.nsamples, procs="RP2")
-        PROCESSORS.write(tag="data_l", value=signal.left.data.flatten(), procs="RP2")
-        PROCESSORS.write(tag="data_r", value=signal.right.data.flatten(), procs="RP2")
-        seq = _loctest_trial(trial, seq, visual, n_images)
+        write(tag="playbuflen", value=signal.n_samples, procs="RP2")
+        write(tag="data_l", value=signal.left.data.flatten(), procs="RP2")
+        write(tag="data_r", value=signal.right.data.flatten(), procs="RP2")
+        if visual is True:  # turn LED on
+            write(tag="bitmask", value=speaker.digital_channel, procs=speaker.digital_proc)
+        play_and_wait_for_button()
+        pose = get_head_pose(n_images=n_images)
+        if visual is True:  # turn LED off
+            write(tag="bitmask", value=0, procs=speaker.digital_proc)
+        seq.add_response(pose)
     play_start_sound()
+    # change conditions property so it contains the only azimuth and elevation of the source
+    seq.conditions = numpy.array([(s.azimuth, s.elevation) for s in seq.conditions])
     return seq
-
-
-def _loctest_trial(trial, sound, visual, n_images):
-    """do a single trial in a localization test experiment: turn on LED (optional), play and wait for button press,
-     get head pose, turn led of, write response in trial sequence and return the sequence"""
-    if visual is True:  # turn LED on
-        PROCESSORS.write(tag="bitmask", value=trial.bit, procs=trial.digital_proc)
-    set_signal_and_speaker(signal=sound.data.flatten(), speaker=speaker.index)
-    play_and_wait_for_button()
-    pose = CAMERAS.get_headpose(convert=True, average=True, n=n_images)
-    if visual is True:  # turn LED off
-        PROCESSORS.write(tag="bitmask", value=0, procs=trial.digital_proc)
-    return pose
 
 
 def equalize_speakers(speakers="all", target_speaker=23, bandwidth=1/10, db_tresh=80,

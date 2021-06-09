@@ -348,9 +348,11 @@ def calibrate_camera(speakers, n_reps=1, n_images=5):
         PROCESSORS.initialize_default(mode="cam_calibration")
     if not all(isinstance(s, Speaker) for s in speakers):
         speakers = pick_speakers(speakers)
-    world_coordinates = [(s.azimuth, s.elevation) for s in speakers]
-    camera_coordinates = []
+    if not all([s.digital_channel for s in speakers]):
+        raise ValueError("All speakers must have a LED attached for a test with visual cues")
     seq = slab.Trialsequence(n_reps=n_reps, conditions=speakers)
+    world_coordinates = [(seq.conditions[t-1].azimuth, seq.conditions[t-1].elevation) for t in seq.trials]
+    camera_coordinates = []
     for speaker in seq:
         write(tag="bitmask", value=int(speaker.digital_channel), procs=speaker.digital_proc)
         wait_for_button()
@@ -370,14 +372,12 @@ def calibrate_camera_no_visual(speakers, n_reps=1, n_images=5):
         PROCESSORS.initialize_default(mode="cam_calibration")
     if not all(isinstance(s, Speaker) for s in speakers):
         speakers = pick_speakers(speakers)
-    world_coordinates = [(s.azimuth, s.elevation) for s in speakers]
     camera_coordinates = []
     speakers = speakers * n_reps
+    world_coordinates = [(s.azimuth, s.elevation) for s in speakers]
     for speaker in speakers:
-        write(tag="bitmask", value=int(speaker.digital_channel), procs=speaker.digital_proc)
         wait_for_button()
         camera_coordinates.append(CAMERAS.get_head_pose(average_axis=1, convert=False, n_images=n_images))
-        write(tag="bitmask", value=0, procs=speaker.digital_proc)
     CAMERAS.calibrate(world_coordinates, camera_coordinates, plot=True)
 
 
@@ -392,7 +392,7 @@ def localization_test_freefield(speakers, duration=0.5, n_reps=1, n_images=5, vi
     0 elevation and azimuth and press the button to indicate the next trial.
 
     Args:
-        targets : rows from the speaker table or index numbers of the speakers.
+        speakers : rows from the speaker table or index numbers of the speakers.
         duration (float): duration of the noise played from the target positions in seconds
         n_reps(int): number of repetitions for each target
         n_images(int): number of images taken for each head pose estimate

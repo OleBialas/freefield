@@ -33,18 +33,21 @@ def test_pick_speakers():
 
 
 def test_calibrate_camera():
-    freefield.initialize_setup(setup="dome", default_mode="cam_calibration", camera_type=None)
-    n_cams = numpy.random.randint(1, 4)
-    freefield.CAMERAS = VirtualCam(n_cams=n_cams)
-    n_reps, n_images = numpy.random.randint(1, 5), numpy.random.randint(1, 5)
-    speakers = freefield.all_leds()
-    freefield.calibrate_camera(speakers, n_reps, n_images)
-    cams = freefield.CAMERAS.calibration.keys()
-    assert len(cams) == n_cams
+    for _ in range(5):
+        freefield.initialize_setup(setup="dome", default_mode="cam_calibration", camera_type=None)
+        n_cams = numpy.random.randint(1, 4)
+        freefield.CAMERAS = VirtualCam(n_cams=n_cams)
+        n_reps, n_images = numpy.random.randint(1, 5), numpy.random.randint(1, 5)
+        speakers = freefield.all_leds()
+        freefield.calibrate_camera(speakers, n_reps, n_images)
+        cams = freefield.CAMERAS.calibration.keys()
+        assert len(cams) == n_cams
+        speakers = freefield.pick_speakers([1, 2, 3, 4, 5])
+        numpy.testing.assert_raises(ValueError, freefield.calibrate_camera, speakers, n_reps, n_images)
+        freefield.calibrate_camera_no_visual(speakers, n_reps, n_images)
 
 
 def test_set_signal_and_speaker():
-    # TODO: test applying calibration
     signals = [np.random.random(size=1000), slab.Sound(np.random.random(size=1000))]
     speakers = [np.random.randint(0, 47), [0, 0]]
     procs = ["RX81", "RX82"]
@@ -65,21 +68,6 @@ def test_check_pose():
     assert freefield.check_pose(var=100) is True
     assert freefield.check_pose(var=0) is False
 
-def test_calibrate_camera():
-    targets = freefield.all_leds()
-    coords = freefield.calibrate_camera(targets, n_reps=1, n_images=1)
-
-def test_localization_test_freefield():
-    targets = freefield.TABLE.head()
-    seq = freefield.localization_test_freefield(targets=targets, duration=.8, n_reps=1, n_images=5, visual=False)
-    assert len(seq.trials) == len(seq.data)
-
-def test_localization_test_headphones():
-    targets = freefield.TABLE.head()
-    signals = [slab.Precomputed(lambda: slab.Binaural([slab.Sound.pinknoise(), slab.Sound.pinknoise()]),
-                                n=10) for i in range(len(targets))]
-    seq = freefield.localization_test_headphones(targets=targets, signals=signals, n_reps=1, n_images=5, visual=False)
-    assert len(seq.trials) == len(seq.data)
 
 def test_play_and_record():
     speaker_nr = 23

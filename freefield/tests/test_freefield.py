@@ -30,6 +30,9 @@ def test_pick_speakers():
             speakers = freefield.pick_speakers(picks)
             assert len(speakers) == n_picks
             assert [(s.azimuth, s.elevation) for s in speakers].sort() == picks.sort()
+            picks = numpy.random.choice(freefield.SPEAKERS, n_picks, replace=False)
+            speakers = freefield.pick_speakers(picks)
+            assert all(speakers == picks)
 
 
 def test_calibrate_camera():
@@ -49,7 +52,7 @@ def test_calibrate_camera():
 
 def test_localization_test():
     freefield.initialize_setup(setup="dome", default_mode="loctest_freefield", camera_type=None)
-    freefield.CAMERAS = VirtualCam(n_cams=numpy.random.randint(1,4))
+    freefield.CAMERAS = VirtualCam(n_cams=numpy.random.randint(1, 4))
     freefield.calibrate_camera(freefield.all_leds(), n_reps=1, n_images=1)
     for _ in range(5):
         n_speakers = numpy.random.randint(2, 10)
@@ -58,13 +61,13 @@ def test_localization_test():
         n_reps = numpy.random.randint(1, 5)
         n_images = numpy.random.randint(1, 5)
         seq = freefield.localization_test_freefield(speakers, duration, n_reps, n_images, visual=False)
-        assert len(seq.data) == len(speakers)*n_reps
-        signals = [slab.Binaural.whitenoise()]*n_speakers
+        assert len(seq.data) == len(speakers) * n_reps
+        signals = [slab.Binaural.whitenoise()] * n_speakers
         seq = freefield.localization_test_headphones(speakers, signals, n_reps, n_images, visual=False)
-        assert len(seq.data) == len(speakers)*n_reps
+        assert len(seq.data) == len(speakers) * n_reps
         speakers = freefield.all_leds()
         seq = freefield.localization_test_freefield(speakers, duration, n_reps, n_images, visual=True)
-        assert len(seq.data) == len(speakers)*n_reps
+        assert len(seq.data) == len(speakers) * n_reps
 
 
 def test_set_signal_and_speaker():
@@ -90,19 +93,31 @@ def test_check_pose():
 
 
 def test_play_and_record():
-    speaker_nr = 23
-    signal = slab.Sound.whitenoise()
+    sound = slab.Sound.whitenoise()
     freefield.initialize_setup(setup="dome", default_mode="play_rec", camera_type=None)
-    rec = freefield.play_and_record(speaker_nr, signal, compensate_delay=True, apply_calibration=True)
+    for speaker in freefield.SPEAKERS:
+        rec = freefield.play_and_record(speaker, sound, compensate_delay=True, equalize=False)
+        assert rec.n_samples == sound.n_samples
+        assert rec.nchannels == 1
+    freefield.initialize_setup(setup="dome", default_mode="play_birec", camera_type=None)
+    for speaker in freefield.SPEAKERS:
+        rec = freefield.play_and_record(speaker, sound, compensate_delay=True, equalize=False)
+        assert rec.n_samples == sound.n_samples
+        assert rec.nchannels == 2
 
-def test_level_equalization():
-    signal = slab.Sound.chirp(duration=0.05, from_frequency=100, to_frequency=20000)
-    speaker_list = freefield.TABLE
-    target_speaker = 23
-    db_thresh = 80
-    lvls = freefield._level_equalization(signal, speaker_list, target_speaker, db_thresh)
-    assert len(lvls) == len(speaker_list)
-    assert lvls[23] == 1
+
+def test_equalization():
+    freefield.initialize_setup(setup="dome", default_mode="play_rec", camera_type=None)
+    sound = slab.Sound.chirp(duration=0.05, from_frequency=100, to_frequency=20000)
+    speakers = numpy.random.choice(freefield.SPEAKERS, numpy.random.randint(1, 47), replace=False)
+    target_speaker = numpy.random.choice(freefield.SPEAKERS)
+    levels = freefield._level_equalization(speakers, sound, target_speaker, threshold=80)
+    assert len(levels) == len(speakers)
+    levels = freefield._level_equalization(speakers, sound, target_speaker, threshold=100)
+    assert all(levels == 1)
+    filter_bank, _ = freefield._frequency_equalization(speakers, sound, target_speaker, levels, 1 / 8,
+                                                       200, 20000, 1.0, 80)
+
 
 def test_frequency_equalization():
     signal = slab.Sound.chirp(duration=0.05, from_frequency=100, to_frequency=20000)
@@ -117,9 +132,10 @@ def test_frequency_equalization():
     filter_bank = freefield._frequency_equalization(signal, speaker_list, target_speaker, lvls, bandwidth,
                                                     low_cutoff, high_cutoff, alpha, db_thresh)
 
+
 def test_equalize_speakers():
     n_files = len(os.listdir(DIR / "data" / "log"))
-    freefield.equalize_speakers(speakers="all", target_speaker=23, bandwidth=1 / 10, db_tresh=80,
+    freefield.equalize_speakers(speakers="all", reference_speaker=23, bandwidth=1 / 10, threshold=80,
                                 low_cutoff=200, high_cutoff=16000, alpha=1.0, plot=False, test=True)
     assert freefield.EQUALIZATIONFILE.exists()
     assert len(os.listdir(DIR / "data" / "log")) == n_files + 1  # log folder should be one element longer
@@ -130,4 +146,6 @@ def test_equalize_speakers():
 def test_check_equialization():
     signal = slab.Sound.whitenoise()
     freefield.check_equalization(signal, speakers="all", max_diff=5, db_thresh=80)
+
+
 pass

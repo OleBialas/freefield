@@ -155,7 +155,6 @@ class Processors(object):
             if isinstance(value, (list, np.ndarray)):  # TODO: fix this
                 value = np.array(value)  # convert to array
                 if value.ndim > 1:
-                    logging.warning("the input array has more than one dimension! Data is flattened...")
                     value = value.flatten()
                 flag = self.procs[proc]._oleobj_.InvokeTypes(
                     15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)),

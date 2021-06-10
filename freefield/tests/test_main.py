@@ -113,7 +113,7 @@ class TestMainMethods(unittest.TestCase):
 
     def test_equalize_speakers(self):
         n_files = len(os.listdir(DIR / "data" / "log"))
-        freefield.equalize_speakers(speakers="all", target_speaker=23, bandwidth=1 / 10, db_tresh=80,
+        freefield.equalize_speakers(speakers="all", reference_speaker=23, bandwidth=1 / 10, threshold=80,
                                     low_cutoff=200, high_cutoff=16000, alpha=1.0, plot=False, test=True)
         assert freefield.EQUALIZATIONFILE.exists()
         assert len(os.listdir(DIR / "data" / "log")) == n_files + 1  # log folder should be one element longer

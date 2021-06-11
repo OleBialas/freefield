@@ -1,7 +1,8 @@
 import numpy.random
-from freefield import freefield, DIR
+from freefield import freefield
 import numpy as np
-import os
+import tempfile
+from pathlib import Path
 import slab
 from freefield.tests.test_camera import VirtualCam
 
@@ -106,7 +107,7 @@ def test_play_and_record():
         assert rec.nchannels == 2
 
 
-def test_equalization():
+def test_equalizing():
     freefield.initialize_setup(setup="dome", default_mode="play_rec", camera_type=None)
     sound = slab.Sound.chirp(duration=0.05, from_frequency=100, to_frequency=20000)
     speakers = numpy.random.choice(freefield.SPEAKERS, numpy.random.randint(1, 47), replace=False)
@@ -117,35 +118,28 @@ def test_equalization():
     assert all(levels == 1)
     filter_bank, _ = freefield._frequency_equalization(speakers, sound, target_speaker, levels, 1 / 8,
                                                        200, 20000, 1.0, 80)
+    assert filter_bank.n_channels
 
 
-def test_frequency_equalization():
-    signal = slab.Sound.chirp(duration=0.05, from_frequency=100, to_frequency=20000)
-    speaker_list = freefield.TABLE
-    target_speaker = 23
-    db_thresh = 80
-    bandwidth = 1 / 10
-    low_cutoff = 200
-    high_cutoff = 16000
-    alpha = 1.0
-    lvls = freefield._level_equalization(signal, speaker_list, target_speaker, db_thresh)
-    filter_bank = freefield._frequency_equalization(signal, speaker_list, target_speaker, lvls, bandwidth,
-                                                    low_cutoff, high_cutoff, alpha, db_thresh)
+def test_equalization_file():
+    freefield.SETUP = "dome"
+    freefield.read_speaker_table()
+    assert all([s.filter is None for s in freefield.SPEAKERS])
+    _, filename = tempfile.mkstemp()
+    freefield.equalize_speakers(file_name=filename)
+    assert Path(filename).exists()
+    freefield.load_equalization(filename)
+    assert all(isinstance(s.filter, slab.Filter) for s in freefield.SPEAKERS)
+    assert all(isinstance(s.level, float) for s in freefield.SPEAKERS)
 
 
-def test_equalize_speakers():
-    n_files = len(os.listdir(DIR / "data" / "log"))
-    freefield.equalize_speakers(speakers="all", reference_speaker=23, bandwidth=1 / 10, threshold=80,
-                                low_cutoff=200, high_cutoff=16000, alpha=1.0, plot=False, test=True)
-    assert freefield.EQUALIZATIONFILE.exists()
-    assert len(os.listdir(DIR / "data" / "log")) == n_files + 1  # log folder should be one element longer
-    calibration = freefield.EQUALIZATIONDICT
+def test_apply_equalization():
     freefield.initialize_setup(setup="dome", default_mode="play_rec", camera_type=None)
-
-
-def test_check_equialization():
-    signal = slab.Sound.whitenoise()
-    freefield.check_equalization(signal, speakers="all", max_diff=5, db_thresh=80)
-
-
-pass
+    sound = slab.Sound.whitenoise()
+    speaker = numpy.random.choice(freefield.SPEAKERS)
+    numpy.testing.assert_raises(ValueError, freefield.apply_equalization, sound, speaker)
+    _, filename = tempfile.mkstemp()
+    freefield.equalize_speakers(file_name=filename)
+    freefield.load_equalization(filename)
+    equalized = freefield.apply_equalization(sound, speaker)
+    assert isinstance(equalized, slab.Sound)

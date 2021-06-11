@@ -47,9 +47,12 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
         PROCESSORS.initialize_default(default_mode)
     if camera_type is not None:
         CAMERAS = camera.initialize_cameras(camera_type)
-    read_speaker_table(setup)  # load the table containing the information about the loudspeakers
-    load_equalization()  # load the default equalization
-
+    read_speaker_table()  # load the table containing the information about the loudspeakers
+    try:
+        load_equalization()  # load the default equalization
+    except FileNotFoundError:
+        print("Could not load loudspeaker equalization! Use 'load_equalization' or 'equalize_speakers' \n"
+              "to load an existing equalization or measure and compute a new one.")
 
 @dataclass
 class Speaker:
@@ -64,12 +67,10 @@ class Speaker:
     filter: slab.Filter = None  # filter for equalizing the filters transfer function
 
 
-def read_speaker_table(setup="dome"):
+def read_speaker_table():
     global SPEAKERS
     SPEAKERS = []
-    if setup not in ["dome", "arc"]:
-        raise ValueError("Setup must be 'dome' or 'arc'!")
-    table_file = DIR / 'data' / 'tables' / Path(f'speakertable_{setup}.txt')
+    table_file = DIR / 'data' / 'tables' / Path(f'speakertable_{SETUP}.txt')
     table = np.loadtxt(table_file, skiprows=1, delimiter=",", dtype=str)
     for row in table:
         SPEAKERS.append(Speaker(index=int(row[0]), analog_channel=int(row[1]), analog_proc=row[2],
@@ -80,13 +81,17 @@ def read_speaker_table(setup="dome"):
 def load_equalization(equalization_file=None):
     if equalization_file is None:
         equalization_file = DIR / 'data' / f'calibration_{SETUP}.pkl'
+    else:
+        equalization_file = Path(equalization_file)
     if equalization_file.exists():
         with open(equalization_file, "rb") as f:
             equalization = pickle.load(f)
-    for index in equalization.keys():
-        speaker = pick_speakers(picks=int(index))[0]
-        speaker.level = equalization[index]["level"]
-        speaker.filter = equalization[index]["filter"]
+        for index in equalization.keys():
+            speaker = pick_speakers(picks=int(index))[0]
+            speaker.level = equalization[index]["level"]
+            speaker.filter = equalization[index]["filter"]
+    else:
+        raise FileNotFoundError(f"Could not load equalization file {equalization_file}!")
 
 
 # Wrappers for Processor operations read, write, trigger and halt:
@@ -494,7 +499,7 @@ def equalize_speakers(speakers="all", reference_speaker=23, bandwidth=1 / 10, th
     inverse filters are computed see the documentation of slab.Filter.equalizing_filterbank
     """
     if not PROCESSORS.mode == "play_rec":
-        PROCESSORS.initialize_default(mode="play_and_record")
+        PROCESSORS.initialize_default(mode="play_rec")
     sound = slab.Sound.chirp(duration=0.05, from_frequency=low_cutoff, to_frequency=high_cutoff)
     if speakers == "all":  # use the whole speaker table
         speakers = SPEAKERS
@@ -508,6 +513,8 @@ def equalize_speakers(speakers="all", reference_speaker=23, bandwidth=1 / 10, th
                     for i in range(len(speakers))}
     if file_name is None:  # use the default filename and rename teh existing file
         file_name = DIR / 'data' / f'calibration_{SETUP}.pkl'
+    else:
+        file_name = Path(file_name)
     if file_name.exists():  # move the old calibration to the log folder
         date = datetime.datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")
         file_name.rename(file_name.parent/(file_name.stem+date+file_name.suffix))

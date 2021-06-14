@@ -99,12 +99,12 @@ def test_play_and_record():
     for speaker in freefield.SPEAKERS:
         rec = freefield.play_and_record(speaker, sound, compensate_delay=True, equalize=False)
         assert rec.n_samples == sound.n_samples
-        assert rec.nchannels == 1
+        assert rec.n_channels == 1
     freefield.initialize_setup(setup="dome", default_mode="play_birec", camera_type=None)
     for speaker in freefield.SPEAKERS:
         rec = freefield.play_and_record(speaker, sound, compensate_delay=True, equalize=False)
         assert rec.n_samples == sound.n_samples
-        assert rec.nchannels == 2
+        assert rec.n_channels == 2
 
 
 def test_equalizing():

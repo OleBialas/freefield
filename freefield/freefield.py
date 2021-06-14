@@ -10,13 +10,15 @@ import slab
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from freefield import DIR, Processors, camera
+
 logging.basicConfig(level=logging.INFO)
 slab.Signal.set_default_samplerate(48828)  # default samplerate for generating sounds, filters etc.
 # Initialize global variables:
 CAMERAS = camera.Cameras()
 PROCESSORS = Processors()
 SPEAKERS = []  # list of all the loudspeakers in the active setup
-SETUP = "" # the currently active setup - "dome" or "arc"
+SETUP = ""  # the currently active setup - "dome" or "arc"
+
 
 def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connection="GB", camera_type=None):
     """
@@ -53,6 +55,7 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
     except FileNotFoundError:
         print("Could not load loudspeaker equalization! Use 'load_equalization' or 'equalize_speakers' \n"
               "to load an existing equalization or measure and compute a new one.")
+
 
 @dataclass
 class Speaker:
@@ -196,7 +199,7 @@ def shift_setup(delta_azi, delta_ele):
         delta_azi (float): azimuth by which the setup is shifted, positive value means shifting right
         delta_ele (float): elevation by which the setup is shifted, positive value means shifting up
     """
-    # TODO: this is not how it works
+    # TODO: first convert to cartesian coordinates then move
     global SPEAKERS
     for speaker in SPEAKERS:
         speaker.azimuth += delta_azi  # azimuth
@@ -235,6 +238,8 @@ def apply_equalization(signal, speaker, level=True, frequency=True):
     Args:
         signal: signal to calibrate
         speaker: index number, coordinates or row from the speaker table. Determines which calibration is used
+        level:
+        frequency:
     Returns:
         slab.Sound: calibrated copy of signal
     """
@@ -306,7 +311,6 @@ def check_pose(fix=(0, 0), var=10):
     Returns:
         bool: True if difference between pose and fix is smaller than var, False otherwise
     """
-    # TODO: what happens if no image is obtained?
     azi, ele = get_head_pose(n_images=1)
     if (azi is np.nan) or (azi is None):
         azi = fix[0]
@@ -323,7 +327,7 @@ def play_start_sound(speaker=23):
     """
     Load and play the sound that signals the start and end of an experiment/block
     """
-    start = slab.Sound.read(DIR/"data"/"sounds"/"start.wav")
+    start = slab.Sound.read(DIR / "data" / "sounds" / "start.wav")
     set_signal_and_speaker(signal=start, speaker=speaker)
     play_and_wait()
 
@@ -357,7 +361,7 @@ def calibrate_camera(speakers, n_reps=1, n_images=5):
     if not all([s.digital_channel for s in speakers]):
         raise ValueError("All speakers must have a LED attached for a test with visual cues")
     seq = slab.Trialsequence(n_reps=n_reps, conditions=speakers)
-    world_coordinates = [(seq.conditions[t-1].azimuth, seq.conditions[t-1].elevation) for t in seq.trials]
+    world_coordinates = [(seq.conditions[t - 1].azimuth, seq.conditions[t - 1].elevation) for t in seq.trials]
     camera_coordinates = []
     for speaker in seq:
         write(tag="bitmask", value=int(speaker.digital_channel), procs=speaker.digital_proc)
@@ -380,7 +384,7 @@ def calibrate_camera_no_visual(speakers, n_reps=1, n_images=5):
     camera_coordinates = []
     speakers = speakers * n_reps
     world_coordinates = [(s.azimuth, s.elevation) for s in speakers]
-    for speaker in speakers:
+    for _ in speakers:
         wait_for_button()
         camera_coordinates.append(CAMERAS.get_head_pose(average_axis=1, convert=False, n_images=n_images))
     CAMERAS.calibrate(world_coordinates, camera_coordinates, plot=True)
@@ -463,7 +467,7 @@ def localization_test_headphones(speakers, signals, n_reps=1, n_images=5, visual
     seq = slab.Trialsequence(speakers, n_reps, kind="non_repeating")
     play_start_sound()
     for speaker in seq:
-        signal = signals[seq.trials[seq.this_n]-1]  # get the signal corresponding to the target
+        signal = signals[seq.trials[seq.this_n] - 1]  # get the signal corresponding to the target
         if isinstance(signal, slab.Precomputed):  # if signal is precomputed, pick a random one
             signal = signal[np.random.randint(len(signal))]
             try:
@@ -517,7 +521,7 @@ def equalize_speakers(speakers="all", reference_speaker=23, bandwidth=1 / 10, th
         file_name = Path(file_name)
     if file_name.exists():  # move the old calibration to the log folder
         date = datetime.datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")
-        file_name.rename(file_name.parent/(file_name.stem+date+file_name.suffix))
+        file_name.rename(file_name.parent / (file_name.stem + date + file_name.suffix))
     with open(file_name, 'wb') as f:  # save the newly recorded calibration
         pickle.dump(equalization, f, pickle.HIGHEST_PROTOCOL)
 
@@ -559,34 +563,26 @@ def _frequency_equalization(speakers, sound, reference_speaker, calibration_leve
     return filter_bank, recordings
 
 
-def check_equalization(sig, speakers="all", max_diff=5, db_thresh=80):
+def test_equalization(speakers="all"):
     """
     Test the effectiveness of the speaker equalization
     """
-    fig, ax = plt.subplots(3, 2, sharex=True)
-    # recordings without, with level and with complete (level+frequency) equalization
-    rec_raw, rec_lvl_eq, rec_freq_eq = [], [], []
+    if not PROCESSORS.mode == "play_rec":
+        PROCESSORS.initialize_default(mode="play_rec")
+    not_equalized = slab.Sound.whitenoise(duration=.5)
+    # the recordings from the un-equalized, the level equalized and the fully equalized sounds
+    rec_raw, rec_level, rec_full = [], [], []
     if speakers == "all":  # use the whole speaker table
-        speaker_list = TABLE
-    elif isinstance(speakers, list):  # use a subset of speakers
-        speaker_list = get_speaker_list(speakers)
+        speakers = SPEAKERS
     else:
-        raise ValueError("Speakers must be 'all' or a list of indices/coordinates!")
-    for i in range(speaker_list.shape[0]):
-        row = speaker_list.loc[i]
-        sig2 = apply_equalization(sig, speaker=row.index_number, level=True, frequency=False)  # only level equalization
-        sig3 = apply_equalization(sig, speaker=row.index_number, level=True, frequency=True)  # level and frequency
-        rec_raw.append(play_and_record(row.index_number, sig, calibrate=False))
-        rec_lvl_eq.append(play_and_record(row.index_number, sig2, calibrate=False))
-        rec_freq_eq.append(play_and_record(row.index_number, sig3, calibrate=False))
-    for i, rec in enumerate([rec_raw, rec_lvl_eq, rec_freq_eq]):
-        rec = slab.Sound(rec)
-        rec.data = rec.data[:, rec.level > db_thresh]
-        rec.spectrum(axes=ax[i, 0], show=False)
-        spectral_range(rec, plot=ax[i, 1], thresh=max_diff, log=False)
-    plt.show()
-
-    return slab.Sound(rec_raw), slab.Sound(rec_lvl_eq), slab.Sound(rec_freq_eq)
+        speakers = pick_speakers(SPEAKERS)
+    for speaker in speakers:
+        level_equalized = apply_equalization(not_equalized, speaker=speaker, level=True, frequency=False)
+        full_equalized = apply_equalization(not_equalized, speaker=speaker, level=True, frequency=True)
+        rec_raw.append(play_and_record(speaker, not_equalized, equalize=False))
+        rec_level.append(play_and_record(speaker, level_equalized, equalize=False))
+        rec_full.append(play_and_record(speaker, full_equalized, equalize=False))
+    return slab.Sound(rec_raw), slab.Sound(rec_level), slab.Sound(rec_full)
 
 
 def spectral_range(signal, bandwidth=1 / 5, low_cutoff=50, high_cutoff=20000, thresh=3,
@@ -594,25 +590,24 @@ def spectral_range(signal, bandwidth=1 / 5, low_cutoff=50, high_cutoff=20000, th
     """
     Compute the range of differences in power spectrum for all channels in
     the signal. The signal is devided into bands of equivalent rectangular
-    bandwidth (ERB - see More&Glasberg 1982) and the level is computed for
+    bandwidth (ERB - see More& Glasberg 1982) and the level is computed for
     each frequency band and each channel in the recording. To show the range
     of spectral difference across channels the minimum and maximum levels
     across channels are computed. Can be used for example to check the
     effect of loud speaker equalization.
     """
-    # TODO: this really should be part of the slab.Sound file
     # generate ERB-spaced filterbank:
-    fbank = slab.Filter.cos_filterbank(length=1000, bandwidth=bandwidth,
-                                       low_cutoff=low_cutoff, high_cutoff=high_cutoff,
-                                       samplerate=signal.samplerate)
+    filter_bank = slab.Filter.cos_filterbank(length=1000, bandwidth=bandwidth,
+                                             low_cutoff=low_cutoff, high_cutoff=high_cutoff,
+                                             samplerate=signal.samplerate)
     center_freqs, _, _ = slab.Filter._center_freqs(low_cutoff, high_cutoff, bandwidth)
     center_freqs = slab.Filter._erb2freq(center_freqs)
     # create arrays to write data into:
-    levels = np.zeros((signal.nchannels, fbank.nchannels))
-    max_level, min_level = np.zeros(fbank.nchannels), np.zeros(fbank.nchannels)
-    for i in range(signal.nchannels):  # compute ERB levels for each channel
-        levels[i] = fbank.apply(signal.channel(i)).level
-    for i in range(fbank.nchannels):  # find max and min for each frequency
+    levels = np.zeros((signal.n_channels, filter_bank.n_channels))
+    max_level, min_level = np.zeros(filter_bank.n_channels), np.zeros(filter_bank.n_channels)
+    for i in range(signal.n_channels):  # compute ERB levels for each channel
+        levels[i] = filter_bank.apply(signal.channel(i)).level
+    for i in range(filter_bank.n_channels):  # find max and min for each frequency
         max_level[i] = max(levels[:, i])
         min_level[i] = min(levels[:, i])
     difference = max_level - min_level

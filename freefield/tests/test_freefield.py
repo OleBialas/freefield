@@ -143,3 +143,12 @@ def test_apply_equalization():
     freefield.load_equalization(filename)
     equalized = freefield.apply_equalization(sound, speaker)
     assert isinstance(equalized, slab.Sound)
+
+
+def test_test_equalization():
+    freefield.initialize_setup(setup="dome", default_mode="play_rec", camera_type=None)
+    _, filename = tempfile.mkstemp()
+    freefield.equalize_speakers(file_name=filename)
+    freefield.load_equalization(filename)
+    raw, leve, full = freefield.test_equalization()
+    freefield.spectral_range(raw)

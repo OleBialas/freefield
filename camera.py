@@ -38,7 +38,7 @@ class Cameras:
     def halt(self):
         pass
 
-    def get_head_pose(self, aruco, convert=True, average_axis=1, n_images=1, resolution=1.0):
+    def get_head_pose(self, aruco=False, convert=True, average_axis=1, n_images=1, resolution=1.0):
         """Acquire n images and compute head pose (elevation and azimuth). If
         convert is True use the regression coefficients to convert
         the camera into world coordinates. """
@@ -49,7 +49,7 @@ class Cameras:
                 image = images[:, :, i_image, i_cam]  # get image from array
                 if resolution < 1.0:
                     image = self.change_image_res(image, resolution)
-                if aruco == 'aruco':
+                if aruco == True:
                     azimuth, elevation, _ = self.model.pose_from_image_aruco(image)
                 else:
                     azimuth, elevation, _ = self.model.pose_from_image(image)
@@ -177,16 +177,29 @@ class FlirCams(Cameras):
 
 class WebCams(Cameras):
 
+#TODO: catch open cv error (for use of more than 1 webcam)
+    # def __init__(self):
+    #     super().__init__()
+    #     self.cams = []
+    #     stop = False
+    #     count = 0
+    #     while stop is False:
+    #         try:
+    #             cap = cv2.VideoCapture(count)
+    #             if cap.isOpened():
+    #                 self.cams.append(cap)
+    #             count += 1
+    #         except OpenCV:
+    #             stop = True
+    #     logging.info("initialized %s webcams(s)" % (len(self.cams)))
+    #     self.n_cams = len(self.cams)
+    #     self.imsize = self.acquire_images(n_images=1).shape[0:2]
+
     def __init__(self):
         super().__init__()
         self.cams = []
-        stop = False
-        while stop is False:
-            cap = cv2.VideoCapture(0)
-            if cap.isOpened():
-                self.cams.append(cap)
-            else:
-                stop = True
+        cap = cv2.VideoCapture(0)
+        self.cams.append(cap)
         logging.info("initialized %s webcams(s)" % (len(self.cams)))
         self.n_cams = len(self.cams)
         self.imsize = self.acquire_images(n_images=1).shape[0:2]

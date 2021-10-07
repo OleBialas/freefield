@@ -147,7 +147,7 @@ class FlirCams(Cameras):
             cam.BeginAcquisition()
         for i_image in range(n_images):
             for i_cam, cam in enumerate(self.cams):
-                time.sleep(0.1)
+                time.sleep(0.1) #todo make this faster
                 image_result = cam.GetNextImage()
                 if image_result.IsIncomplete():
                     raise ValueError('Image incomplete: image status %d ...'
@@ -229,6 +229,7 @@ class WebCams(Cameras):
                     else:
                         return image
         return image_data
+
 
     def halt(self):
         for cam in self.cams:

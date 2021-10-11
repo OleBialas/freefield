@@ -49,8 +49,8 @@ class Cameras:
                 image = images[:, :, i_image, i_cam]  # get image from array
                 if resolution < 1.0:
                     image = self.change_image_res(image, resolution)
-                if aruco == True:
-                    azimuth, elevation, _ = self.model.pose_from_image_aruco(image)
+                if aruco:
+                    azimuth, elevation, _, _ = self.model.pose_from_image_aruco(image)
                 else:
                     azimuth, elevation, _ = self.model.pose_from_image(image)
                 pose[:, i_image, i_cam] = azimuth, elevation

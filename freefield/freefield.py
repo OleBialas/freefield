@@ -9,12 +9,12 @@ import numpy as np
 import slab
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
-from freefield import DIR, Processors, camera
+from freefield import DIR, Processors, cameras
 
 logging.basicConfig(level=logging.INFO)
 slab.Signal.set_default_samplerate(48828)  # default samplerate for generating sounds, filters etc.
 # Initialize global variables:
-CAMERAS = camera.Cameras()
+CAMERAS = cameras.Cameras()
 PROCESSORS = Processors()
 SPEAKERS = []  # list of all the loudspeakers in the active setup
 SETUP = ""  # the currently active setup - "dome" or "arc"
@@ -48,7 +48,7 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
     elif default_mode is not None:
         PROCESSORS.initialize_default(default_mode)
     if camera_type is not None:
-        CAMERAS = camera.initialize_cameras(camera_type)
+        CAMERAS = cameras.initialize_cameras(camera_type)
     read_speaker_table()  # load the table containing the information about the loudspeakers
     try:
         load_equalization()  # load the default equalization

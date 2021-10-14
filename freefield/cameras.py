@@ -13,17 +13,27 @@ except ModuleNotFoundError:
 from headpose import PoseEstimator
 
 
-def initialize_cameras(kind="flir"):
+def initialize(kind="flir", pose_method="landmarks"):
+    """
+    Initialize connected cameras for head pose estimation.
+    Arguments:
+        kind (str): The type of camera used. If "flir", use the PySpin API to operate the cameras,
+            if "webcam" use opencv.
+        pose_method (str): Method used for pose estimation. If "landmarks" use a convolutional network to find facial
+            features and map them to a model (requires pytorch), if "aruco" use ArUco-markers for pose estimation.
+    Returns:
+        (instance of Cameras): Object for handling the initialized cameras.
+    """
     if kind.lower() == "flir":
-        return FlirCams()
+        return FlirCams(pose_method)
     elif kind.lower() == "webcam":
-        return WebCams()
+        return WebCams(pose_method)
 
 
 class Cameras:
     def __init__(self):
         self.imsize = None
-        self.model = PoseEstimator()
+        self.model = None
         self.calibration = dict()
         self.n_cams = None
 
@@ -100,12 +110,13 @@ class Cameras:
 
 
 class FlirCams(Cameras):
-    def __init__(self):
+    def __init__(self, pose_method):
         if PySpin is False:
             raise ValueError("PySpin module required for working with FLIR cams not found! \n"
                              "You can download the .whl here: \n"
                              "https://www.flir.com/products/spinnaker-sdk/")
         super().__init__()
+        self.model = PoseEstimator(pose_method)
         self.system = PySpin.System.GetInstance()
         self.cams = self.system.GetCameras()
         self.n_cams = self.cams.GetSize()
@@ -174,8 +185,9 @@ class FlirCams(Cameras):
 
 class WebCams(Cameras):
 
-    def __init__(self):
+    def __init__(self, pose_method):
         super().__init__()
+        self.model = PoseEstimator(pose_method)
         self.cams = []
         stop = False
         while stop is False:

@@ -1,7 +1,7 @@
 # Tests to run on the real setup
 # start with the basic elements, then run complete procedures like
 # calibration or localization test
-from freefield import freefield, camera
+from freefield import freefield, cameras
 import PySpin
 import numpy as np
 import time

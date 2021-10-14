@@ -14,6 +14,14 @@ def single_pole_to_polar(azimuth, elevation):
     return phi, theta
 
 
+def single_pole_to_cartesian(azimuth, elevation):
+    theta, phi = np.deg2rad(azimuth), np.deg2rad(elevation)
+    x = np.cos(theta) * np.sin(phi)
+    y = np.sin(theta) * np.sin(phi)
+    z = np.cos(phi)
+    return x, y, z
+
+
 def polar_to_single_pole(phi, theta):
     azimuth = phi * -1
     elevation = theta + 90

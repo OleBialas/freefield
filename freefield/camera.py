@@ -116,7 +116,6 @@ class FlirCams(Cameras):
         if self.n_cams == 0:  # Finish if there are no cameras
             self.cams.Clear()  # Clear camera list before releasing system
             self.system.ReleaseInstance()  # Release system instance
-            # add exposure time function
             logging.warning('No camera found!')
         else:
             for cam in self.cams:
@@ -168,7 +167,7 @@ class FlirCams(Cameras):
         [cam.EndAcquisition() for cam in self.cams]
         return image_data
 
-    def set_exp_time(self, exposure_time):  # todo test this
+    def set_exp_time(self, exposure_time): 
         for cam in self.cams:
             cam.ExposureAuto.SetValue(PySpin.ExposureAuto_Off)  # disable auto exposure time
             cam.ExposureTime.SetValue(exposure_time)  # set exposure time

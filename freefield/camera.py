@@ -112,16 +112,24 @@ class FlirCams(Cameras):
         self.system = PySpin.System.GetInstance()
         self.cams = self.system.GetCameras()
         self.n_cams = self.cams.GetSize()
+        self.exposure_time = 1e5
         if self.n_cams == 0:  # Finish if there are no cameras
             self.cams.Clear()  # Clear camera list before releasing system
             self.system.ReleaseInstance()  # Release system instance
+            # add exposure time function
             logging.warning('No camera found!')
         else:
             for cam in self.cams:
                 cam.Init()  # Initialize camera
-            logging.info(f"initialized {self.n_cams} FLIR camera(s)")
+                logging.info(f"initialized {self.n_cams} FLIR camera(s)")
+                cam.set_exp_time(self.exposure_time)
+            logging.info(f"set exposure time to {self.n_cams} FLIR camera(s)")
         imsize = self.acquire_images(n_images=1).shape[0:2]
         self.imsize = imsize
+
+    def set_exp_time(self, exposure_time): # todo test this
+        self.ExposureAuto.SetValue(PySpin.ExposureAuto_Off)  # disable auto exposure time
+        self.ExposureTime.SetValue(exposure_time) # set exposure time
 
     def acquire_images(self, n_images=1):
         # TODO: ideas to make this faster -> only set nodemap once use async

@@ -103,7 +103,7 @@ class Cameras:
 
 
 class FlirCams(Cameras):
-    def __init__(self):
+    def __init__(self, exposure_time=1e5):
         if PySpin is False:
             raise ValueError("PySpin module required for working with FLIR cams not found! \n"
                              "You can download the .whl here: \n"
@@ -112,7 +112,7 @@ class FlirCams(Cameras):
         self.system = PySpin.System.GetInstance()
         self.cams = self.system.GetCameras()
         self.n_cams = self.cams.GetSize()
-        self.exposure_time = 1e5
+        self.exposure_time = exposure_time
         if self.n_cams == 0:  # Finish if there are no cameras
             self.cams.Clear()  # Clear camera list before releasing system
             self.system.ReleaseInstance()  # Release system instance
@@ -121,15 +121,10 @@ class FlirCams(Cameras):
         else:
             for cam in self.cams:
                 cam.Init()  # Initialize camera
-                logging.info(f"initialized {self.n_cams} FLIR camera(s)")
-                cam.set_exp_time(self.exposure_time)
-            logging.info(f"set exposure time to {self.n_cams} FLIR camera(s)")
+                cam.ExposureTime.SetValue(exposure_time)  # set exposure time
+            logging.info(f"initialized {self.n_cams} FLIR camera(s)")
         imsize = self.acquire_images(n_images=1).shape[0:2]
         self.imsize = imsize
-
-    def set_exp_time(self, exposure_time): # todo test this
-        self.ExposureAuto.SetValue(PySpin.ExposureAuto_Off)  # disable auto exposure time
-        self.ExposureTime.SetValue(exposure_time) # set exposure time
 
     def acquire_images(self, n_images=1):
         # TODO: ideas to make this faster -> only set nodemap once use async
@@ -172,6 +167,13 @@ class FlirCams(Cameras):
                     return image
         [cam.EndAcquisition() for cam in self.cams]
         return image_data
+
+    def set_exp_time(self, exposure_time):  # todo test this
+        for cam in self.cams:
+            cam.ExposureAuto.SetValue(PySpin.ExposureAuto_Off)  # disable auto exposure time
+            cam.ExposureTime.SetValue(exposure_time)  # set exposure time
+        self.exposure_time = exposure_time
+        logging.info(f"set exposure time to %i µs {exposure_time}")
 
     def halt(self):
         for cam in self.cams:

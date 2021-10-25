@@ -1,4 +1,4 @@
-from sys import platform
+from pathlib import Path
 import numpy as np
 from freefield import DIR
 import os.path
@@ -10,82 +10,50 @@ try:
     import win32com.client
 except ModuleNotFoundError:
     win32com = None
-    logging.warning('Could not import pywin32 - working with TDT devices is disabled')
+    logging.warning('Could not import pywin32 - working with TDT device is disabled')
 
 
 class Processors(object):
     """
-    Class for handling initialization of and basic input/output to TDT-processors.
-    Methods include: initializing processors, writing and reading data, sending
-    triggers and halting the processors.
+    Class for handling the interaction with TDT devices. Usually this is not accessed directly but via the functions
+    of the `freefield` module.
     """
 
     def __init__(self):
-        self.procs = dict()
+        self.processors = dict()
         self.mode = None
         self._zbus = None
 
-    def initialize(self, proc_list, zbus=False, connection='GB'):
-        """
-        Establish connection to one or several TDT-processors.
-
-        Initialize the processors listed in proc_list, which can be a list
-        or list of lists. The list / each sublist contains the name and model
-        of a processor as well as the path to an rcx-file with the circuit that is
-        run on the processor. Elements must be in order name - model - circuit.
-        If zbus is True, initialize the ZBus-interface. If the processors are
-        already initialized they are reset
-
-        Args:
-            proc_list : each sub-list represents one
-                processor. Contains name, model and circuit in that order
-            zbus : if True, initialize the Zbus interface.
-            connection: type of connection to processor, can be "GB" (optical) or "USB"
-
-        Examples:
-        #    >>> devs = Processors()
-        #    >>> # initialize a processor of model 'RP2', named 'RP2' and load
-        #    >>> # the circuit 'example.rcx'. Also initialize ZBus interface:
-        #    >>> devs.initialize_processors(['RP2', 'RP2', 'example.rcx'], True)
-        #    >>> # initialize two processors of model 'RX8' named 'RX81' and 'RX82'
-        #    >>>devs.initialize_processors(['RX81', 'RX8', 'example.rcx'],
-        #    >>>                        ['RX82', 'RX8', 'example.rcx'])
-        """
-        # TODO: check if names are unique and id rcx files do exist
-        logging.info('Initializing TDT processors, this may take a moment ...')
+    def initialize(self, device, zbus=False, connection='GB'):
+        logging.info('Initializing TDT device, this may take a moment ...')
         models = []
-        if not all([isinstance(p, list) for p in proc_list]):
-            proc_list = [proc_list]  # if a single list was provided, wrap it in another list
-        for name, model, circuit in proc_list:
+        if not all([isinstance(p, list) for p in device]):
+            device = [device]  # if a single list was provided, wrap it in another list
+        # check if the names given to the devices are unique:
+        names = [d[0] for d in device]
+        if len(names) != len(set(names)):
+            raise KeyError("Every device must be given a unique name!")
+        # check if the file(s) exist:
+        files = [d[2] for d in device]
+        for i, file in enumerate(files):
+            if not Path(file).exists():
+                if (DIR/"data"/"rcx"/file).exists():
+                    device[i][2] = str(DIR/"data"/"rcx"/file)
+                else:
+                    raise FileNotFoundError(f"{file} does not exist!")
+        for name, model, circuit in device:
             # advance index if a model appears more then once
             models.append(model)
             index = Counter(models)[model]
             print(f"initializing {name} of type {model} with index {index}")
-            self.procs[name] = self._initialize_proc(model, circuit,
-                                                     connection, index)
+            self.processors[name] = self._initialize_proc(model, circuit,
+                                                          connection, index)
         if zbus:
             self._zbus = self._initialize_zbus(connection)
         if self.mode is None:
             self.mode = "custom"
 
-    def initialize_default(self, mode: str) -> None:
-        """
-        Initialize processors in a default configuration.
-
-        This function provides a convenient wrapper for initialize_processors.
-        depending on the mode, processor names and models and rcx files are chosen
-        and initialize_processors is called. The modes cover the core functions
-        of the toolbox and include:
-
-        'play_rec': play sounds using two RX8s and record them with a RP2
-        'play_birec': same as 'play_rec' but record from 2 microphone channels
-        'loctest_freefield': sound localization test under freefield conditions
-        'loctest_headphones': localization test with headphones
-        'cam_calibration': calibrate cameras for headpose estimation
-
-        Args:
-            mode (str): default configuration for initializing processors
-        """
+    def initialize_default(self, mode):
         if mode.lower() == 'play_rec':
             proc_list = [['RP2', 'RP2',  DIR/'data'/'rcx'/'rec_buf.rcx'],
                          ['RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'],
@@ -112,102 +80,62 @@ class Processors(object):
         logging.info(f'set mode to {mode}')
         self.initialize(proc_list, True, "GB")
 
-    def write(self, tag, value, procs) :
-        """
-        Write data to processor(s).
-
-        Set a tag on one or multiple processors to a given value. Processors
-        are addressed by their name (the key in the _procs dictionary). The same
-        tag can be set to the same value on multiple processors by passing a
-        list of names.
-
-        This function will call SetTagVal or WriteTagV depending on whether
-        value is a single integer or float or an array. If the tag could
-        not be set (there are different reasons why that might be the case) a
-        warning is triggered. CAUTION: If the data type of the value arg does
-        not match the data type of the tag, write might be successful but
-        the processor might behave strangely.
-
-        Args:
-            tag : name of the tag in the rcx-circuit where value is
-                written to
-            value : value that is written to the tag. Must
-                match the data type of the tag.
-            procs : name(s) of the processor(s) to write to
-        Examples:
-        #    >>> # set the value of tag 'data' on RX81 & RX82 to 0
-        #    >>> write('data', 0, ['RX81', 'RX82'])
-        """
+    def write(self, tag, value, processors):
         if isinstance(value, (np.int32, np.int64)):
             value = int(value)  # use built-int data type
-        if isinstance(procs, str):
-            if procs == "RX8s":
-                procs = [proc for proc in self.procs.keys() if "RX8" in proc]
-            elif procs == "all":
-                procs = list(self.procs.keys())
+        if isinstance(processors, str):
+            if processors == "RX8s":
+                processors = [proc for proc in self.processors.keys() if "RX8" in proc]
+            elif processors == "all":
+                processors = list(self.processors.keys())
             else:
-                procs = [procs]
-        # Check if the procs are actually there
-        if not set(procs).issubset(self.procs.keys()):
-            raise ValueError('Can not find some of the specified processors!')
+                processors = [processors]
+        # Check if the processors are actually there
+        if not set(processors).issubset(self.processors.keys()):
+            raise ValueError('Can not find some of the specified device!')
         flag = 0
-        for proc in procs:
+        for proc in processors:
             if isinstance(value, (list, np.ndarray)):  # TODO: fix this
                 value = np.array(value)  # convert to array
                 if value.ndim > 1:
                     value = value.flatten()
-                flag = self.procs[proc]._oleobj_.InvokeTypes(
+                flag = self.processors[proc]._oleobj_.InvokeTypes(
                     15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)),
                     tag, 0, value)
                 logging.info(f'Set {tag} on {proc}.')
             else:
-                flag = self.procs[proc].SetTagVal(tag, value)
+                flag = self.processors[proc].SetTagVal(tag, value)
                 logging.info(f'Set {tag} to {value} on {proc}.')
             if flag == 0:
                 logging.warning(f'Unable to set tag {tag} on {proc}')
         return flag
 
     def read(self, tag, proc, n_samples=1):
-        """
-        Read data from processor.
-
-        Get the value of a tag from a processor. The number of samples to read
-        must be specified, default is 1 which means reading a single float or
-        integer value. Unlike in the write method, reading multiple variables
-        in one call of the function is not supported.
-
-        Args:
-            tag: name of the processor to write to
-            proc: processor to read from
-            n_samples: number of samples to read from processor, default=1
-        Returns:
-            type (int, float, list): value read from the tag
-        """
         if n_samples > 1:
-            value = np.asarray(self.procs[proc].ReadTagV(tag, 0, n_samples))
+            value = np.asarray(self.processors[proc].ReadTagV(tag, 0, n_samples))
         else:
-            value = self.procs[proc].GetTagVal(tag)
+            value = self.processors[proc].GetTagVal(tag)
         logging.info(f'Got {tag} from {proc}.')
         return value
 
     def halt(self):
         """
-        Halt all currently active processors.
+        Halt all currently active device.
         """
         # TODO: can we see if halting was successfull
-        for proc_name in self.procs.keys():
-            proc = self.procs[proc_name]
+        for proc_name in self.processors.keys():
+            proc = self.processors[proc_name]
             if hasattr(proc, 'Halt'):
                 logging.info(f'Halting {proc_name}.')
                 proc.Halt()
 
     def trigger(self, kind='zBusA', proc=None):
         """
-        Send a trigger to the processors.
+        Send a trigger to the device.
 
         Use software or the zBus-interface (must be initialized) to send
-        a trigger to processors. The zBus triggers are send to
-        all processors by definition. For the software triggers, once has to
+        a trigger to device. The zBus triggers are send to
+        all device by definition. For the software triggers, once has to
         specify the processor(s).
 
         Args:
@@ -219,7 +147,7 @@ class Processors(object):
         if isinstance(kind, (int, float)):
             if not proc:
                 raise ValueError('Proc needs to be specified for SoftTrig!')
-            self.procs[proc].SoftTrg(kind)
+            self.processors[proc].SoftTrg(kind)
             logging.info(f'SoftTrig {kind} sent to {proc}.')
         elif 'zbus' in kind.lower():
             if self._zbus is None:
@@ -284,7 +212,7 @@ class Processors(object):
 
 class _COM:
     """
-    Working with TDT processors is only possible on windows machines. This dummy class
+    Working with TDT device is only possible on windows machines. This dummy class
     simulates the output of a processor to test code on other operating systems
     """
     @staticmethod

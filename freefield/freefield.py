@@ -213,23 +213,16 @@ def wait_to_finish_playing(proc="all", tag="playback"):
 
 def wait_for_button(proc="RP2", tag="response"):
     """
-    Busy wait until the response button was pressed.
+    Busy wait until the response button was pressed. Repeatedly read a tag from a processor and do a busy wait while
+        0 is returned.
 
     Args:
+        proc (str): Processor from which the tag is read.
+        tag (str): Tag which is read.
 
     """
     while not PROCESSORS.read(tag=tag, proc=proc):
         time.sleep(0.1)  # wait until button is pressed
-
-
-def play_and_wait() -> None:
-    PROCESSORS.trigger()
-    wait_to_finish_playing()
-
-
-def play_and_wait_for_button() -> None:
-    play_and_wait()
-    wait_for_button()
 
 
 def pick_speakers(picks):

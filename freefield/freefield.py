@@ -166,6 +166,19 @@ def read(tag, processor, n_samples=1):
 
 
 def play(kind='zBusA', proc=None):
+    """
+    Use software or the zBus-interface (must be initialized) to send trigger(s) to the processor(s). The zBus
+    triggers are sent to all device and ensure simultaneous triggering. For the software triggers, once has to
+    specify the processor(s).
+
+    Args:
+        kind (str, int): Trigger to use
+
+        kind of trigger that is send. For zBus triggers
+            this can be 'zBusA' or 'zBusB', for software triggers it can
+            be any integer.
+        proc: processor to trigger - only necessary when using software triggers
+        """
     PROCESSORS.trigger(kind=kind, proc=proc)
 
 
@@ -173,7 +186,6 @@ def halt():
     """
     Halt all devices in the setup, data stored in the working memory of the processors or cameras will be lost.
     """
-
     PROCESSORS.halt()
     CAMERAS.halt()
 

@@ -8,3 +8,4 @@ slab
 headpose
 opencv-python
 torch
+torchvision

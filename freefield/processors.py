@@ -119,9 +119,6 @@ class Processors(object):
         return value
 
     def halt(self):
-        """
-        Halt all currently active device.
-        """
         # TODO: can we see if halting was successfull
         for proc_name in self.processors.keys():
             proc = self.processors[proc_name]
@@ -130,20 +127,6 @@ class Processors(object):
                 proc.Halt()
 
     def trigger(self, kind='zBusA', proc=None):
-        """
-        Send a trigger to the device.
-
-        Use software or the zBus-interface (must be initialized) to send
-        a trigger to device. The zBus triggers are send to
-        all device by definition. For the software triggers, once has to
-        specify the processor(s).
-
-        Args:
-            kind (str, int): kind of trigger that is send. For zBus triggers
-                this can be 'zBusA' or 'zBusB', for software triggers it can
-                be any integer.
-            proc: processor to trigger - only necessary when using software triggers
-        """
         if isinstance(kind, (int, float)):
             if not proc:
                 raise ValueError('Proc needs to be specified for SoftTrig!')

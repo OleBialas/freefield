@@ -172,12 +172,10 @@ def play(kind='zBusA', proc=None):
     specify the processor(s).
 
     Args:
-        kind (str, int): Trigger to use
-
-        kind of trigger that is send. For zBus triggers
-            this can be 'zBusA' or 'zBusB', for software triggers it can
-            be any integer.
-        proc: processor to trigger - only necessary when using software triggers
+        kind (str, int): Trigger to use. Possible strings are 'zBusA' or 'zBusB' which uses one of the two zBus
+            options to trigger all devices simultaneously (the zBus system must be initialized). Integers can be in the
+            range 1 - 10 and refer to software triggers for a single processor.
+        proc (None, str): Processor to trigger. Only needed if a software trigger is used
         """
     PROCESSORS.trigger(kind=kind, proc=proc)
 

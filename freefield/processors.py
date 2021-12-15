@@ -127,9 +127,11 @@ class Processors(object):
                 proc.Halt()
 
     def trigger(self, kind='zBusA', proc=None):
-        if isinstance(kind, (int, float)):
+        if isinstance(kind, int):
             if not proc:
                 raise ValueError('Proc needs to be specified for SoftTrig!')
+            if not 1<= kind >= 10:
+                raise ValueError("software triggers must be between 1 and 10!")
             self.processors[proc].SoftTrg(kind)
             logging.info(f'SoftTrig {kind} sent to {proc}.')
         elif 'zbus' in kind.lower():

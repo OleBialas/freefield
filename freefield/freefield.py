@@ -213,12 +213,12 @@ def wait_to_finish_playing(proc="all", tag="playback"):
 
 def wait_for_button(proc="RP2", tag="response"):
     """
-    Busy wait until the response button was pressed
+    Busy wait until the response button was pressed.
 
     Args:
 
     """
-    while not PROCESSORS.read(tag="response", proc="RP2"):
+    while not PROCESSORS.read(tag=tag, proc=proc):
         time.sleep(0.1)  # wait until button is pressed
 
 

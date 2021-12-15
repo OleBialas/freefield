@@ -7,3 +7,4 @@ scipy
 slab
 headpose
 opencv-python
+torch

@@ -170,6 +170,10 @@ def play(kind='zBusA', proc=None):
 
 
 def halt():
+    """
+    Halt all devices in the setup, data stored in the working memory of the processors or cameras will be lost.
+    """
+
     PROCESSORS.halt()
     CAMERAS.halt()
 

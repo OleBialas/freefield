@@ -103,7 +103,7 @@ def read_speaker_table():
 
 def load_equalization(file=None):
     """
-    Load a loudspeaker equalization from a pickle file and set the the `level` and `filter` attribute of each speaker
+    Load a loudspeaker equalization from a pickle file and set the `level` and `filter` attribute of each speaker
         in the global speakers list.
 
     Arguments:
@@ -139,12 +139,12 @@ def write(tag, value, processors):
         processors (str | list) : string (or list of strings) with the name(s) of the processor(s) to write to.
 
     Examples:
-    >>> import freefield
-    >>> freefield.initialize(setup="dome", default="play_rec")
-    >>> write('data', 1000, ['RX81', 'RX82']) # set the value of tag 'playbuflen' on RX81 & RX82 to 1000
-    >>> import numpy
-    >>> data = numpy.random.randn(1000)
-    >>> write('data', data, "RX81") # write data array to the tag 'data' on the RX81
+        import freefield
+        freefield.initialize(setup="dome", default="play_rec")
+        write('data', 1000, ['RX81', 'RX82']) # set the value of tag 'playbuflen' on RX81 & RX82 to 1000
+        import numpy
+        data = numpy.random.randn(1000)
+        write('data', data, "RX81") # write data array to the tag 'data' on the RX81
     """
     PROCESSORS.write(tag, value, processors)
 
@@ -197,7 +197,13 @@ def wait_to_finish_playing(proc="all", tag="playback"):
     logging.info('Done waiting.')
 
 
-def wait_for_button() -> None:
+def wait_for_button(proc="RP2", tag="response"):
+    """
+    Busy wait until the response button was pressed
+
+    Args:
+
+    """
     while not PROCESSORS.read(tag="response", proc="RP2"):
         time.sleep(0.1)  # wait until button is pressed
 

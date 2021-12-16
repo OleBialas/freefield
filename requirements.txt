@@ -9,3 +9,4 @@ headpose
 opencv-python
 torch
 torchvision
+psychopy

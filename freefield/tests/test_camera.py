@@ -2,6 +2,7 @@ import numpy
 from freefield import DIR, Cameras
 import cv2
 import os
+from headpose import PoseEstimator
 
 
 class VirtualCam(Cameras):
@@ -10,6 +11,7 @@ class VirtualCam(Cameras):
         self.n_cams = n_cams
         test_image = self.acquire_images(n_images=1)
         self.imsize = test_image.shape[0:2]
+        self.model = PoseEstimator("landmarks")
 
     def acquire_images(self, n_images):
 

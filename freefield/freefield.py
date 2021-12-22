@@ -234,6 +234,7 @@ def pick_speakers(picks):
         picks (list of lists, list, int): index number of the speaker
 
     Returns:
+        (list):
     """
     if isinstance(picks, (list, np.ndarray)):
         if all(isinstance(p, Speaker) for p in picks):
@@ -242,7 +243,7 @@ def pick_speakers(picks):
             speakers = [s for s in SPEAKERS if s.index in picks]
         else:
             speakers = [s for s in SPEAKERS if (s.azimuth, s.elevation) in picks]
-    elif isinstance(picks, (int, np.int)):
+    elif isinstance(picks, (int, np.int64, np.int32)):
         speakers = [s for s in SPEAKERS if s.index == picks]
     elif isinstance(picks, Speaker):
         speakers = [picks]
@@ -316,12 +317,14 @@ def apply_equalization(signal, speaker, level=True, frequency=True):
     """
     signal = slab.Sound(signal)
     speaker = pick_speakers(speaker)[0]
-    if speaker.filter is None:
-        raise ValueError("Speakers are not equalized! Load an existing equalization of calibrate the setup!")
     equalized_signal = deepcopy(signal)
     if level:
+        if speaker.level is None:
+            raise ValueError("speaker not level-equalized! Load an existing equalization of calibrate the setup!")
         equalized_signal.level *= speaker.level
     if frequency:
+        if speaker.filter is None:
+            raise ValueError("speaker not frequency-equalized! Load an existing equalization of calibrate the setup!")
         equalized_signal = speaker.filter.apply(equalized_signal)
     return equalized_signal
 
@@ -400,7 +403,7 @@ def play_start_sound(speaker=23):
     """
     start = slab.Sound.read(DIR / "data" / "sounds" / "start.wav")
     set_signal_and_speaker(signal=start, speaker=speaker)
-    play_and_wait()
+    play()
 
 
 def play_warning_sound(duration=.5, speaker=23):
@@ -409,7 +412,7 @@ def play_warning_sound(duration=.5, speaker=23):
     """
     warning = slab.Sound.clicktrain(duration=duration)
     set_signal_and_speaker(signal=warning, speaker=speaker)
-    play_and_wait()
+    play()
 
 
 def calibrate_camera(speakers, n_reps=1, n_images=5):
@@ -435,10 +438,10 @@ def calibrate_camera(speakers, n_reps=1, n_images=5):
     world_coordinates = [(seq.conditions[t - 1].azimuth, seq.conditions[t - 1].elevation) for t in seq.trials]
     camera_coordinates = []
     for speaker in seq:
-        write(tag="bitmask", value=int(speaker.digital_channel), procs=speaker.digital_proc)
+        write(tag="bitmask", value=int(speaker.digital_channel), processors=speaker.digital_proc)
         wait_for_button()
         camera_coordinates.append(CAMERAS.get_head_pose(average_axis=1, convert=False, n_images=n_images))
-        write(tag="bitmask", value=0, procs=speaker.digital_proc)
+        write(tag="bitmask", value=0, processors=speaker.digital_proc)
     CAMERAS.calibrate(world_coordinates, camera_coordinates, plot=True)
 
 
@@ -494,14 +497,16 @@ def localization_test_freefield(speakers, duration=0.5, n_reps=1, n_images=5, vi
             play_warning_sound()
             wait_for_button()
         sound = slab.Sound.pinknoise(duration=duration)
-        write(tag="playbuflen", value=sound.n_samples, procs=["RX81", "RX82"])
+        write(tag="playbuflen", value=sound.n_samples, processors=["RX81", "RX82"])
         if visual is True:  # turn LED on
-            write(tag="bitmask", value=speaker.digital_channel, procs=speaker.digital_proc)
+            write(tag="bitmask", value=speaker.digital_channel, processors=speaker.digital_proc)
         set_signal_and_speaker(signal=sound.data.flatten(), speaker=speaker)
-        play_and_wait_for_button()
+        play()
+        wait_to_finish_playing()
+        wait_for_button()
         pose = get_head_pose(n_images=n_images)
         if visual is True:  # turn LED off
-            write(tag="bitmask", value=0, procs=speaker.digital_proc)
+            write(tag="bitmask", value=0, processors=speaker.digital_proc)
         seq.add_response(pose)
     play_start_sound()
     # change conditions property so it contains the only azimuth and elevation of the source
@@ -549,15 +554,17 @@ def localization_test_headphones(speakers, signals, n_reps=1, n_images=5, visual
         while check_pose(fix=[0, 0]) is None:  # check if head is in position
             play_warning_sound()
             wait_for_button()
-        write(tag="playbuflen", value=signal.n_samples, procs="RP2")
-        write(tag="data_l", value=signal.left.data.flatten(), procs="RP2")
-        write(tag="data_r", value=signal.right.data.flatten(), procs="RP2")
+        write(tag="playbuflen", value=signal.n_samples, processors="RP2")
+        write(tag="data_l", value=signal.left.data.flatten(), processors="RP2")
+        write(tag="data_r", value=signal.right.data.flatten(), processors="RP2")
         if visual is True:  # turn LED on
-            write(tag="bitmask", value=speaker.digital_channel, procs=speaker.digital_proc)
-        play_and_wait_for_button()
+            write(tag="bitmask", value=speaker.digital_channel, processors=speaker.digital_proc)
+        play()
+        wait_to_finish_playing()
+        wait_for_button()
         pose = get_head_pose(n_images=n_images)
         if visual is True:  # turn LED off
-            write(tag="bitmask", value=0, procs=speaker.digital_proc)
+            write(tag="bitmask", value=0, processors=speaker.digital_proc)
         seq.add_response(pose)
     play_start_sound()
     # change conditions property so it contains the only azimuth and elevation of the source
@@ -705,7 +712,7 @@ def play_and_record(speaker, sound, compensate_delay=True, compensate_attenuatio
     Play the signal from a speaker and return the recording. Delay compensation
     means making the buffer of the recording processor n samples longer and then
     throwing the first n samples away when returning the recording so sig and
-    rec still have the same legth. For this to work, the circuits rec_buf.rcx
+    rec still have the same length. For this to work, the circuits rec_buf.rcx
     and play_buf.rcx have to be initialized on RP2 and RX8s and the mic must
     be plugged in.
     Parameters:
@@ -717,22 +724,23 @@ def play_and_record(speaker, sound, compensate_delay=True, compensate_attenuatio
     Returns:
         rec: 1-D array, recorded signal
     """
-    write(tag="playbuflen", value=sound.n_samples, procs=["RX81", "RX82"])
+    write(tag="playbuflen", value=sound.n_samples, processors=["RX81", "RX82"])
     if compensate_delay:
         n_delay = get_recording_delay(play_from="RX8", rec_from="RP2")
         n_delay += 50  # make the delay a bit larger to avoid missing the sound's onset
     else:
         n_delay = 0
-    write(tag="playbuflen", value=sound.n_samples, procs=["RX81", "RX82"])
-    write(tag="playbuflen", value=sound.n_samples + n_delay, procs="RP2")
+    write(tag="playbuflen", value=sound.n_samples, processors=["RX81", "RX82"])
+    write(tag="playbuflen", value=sound.n_samples + n_delay, processors="RP2")
     set_signal_and_speaker(sound, speaker, equalize)
-    play_and_wait()
+    play()
+    wait_to_finish_playing()
     if PROCESSORS.mode == "play_rec":  # read the data from buffer and skip the first n_delay samples
-        rec = read(tag='data', proc='RP2', n_samples=sound.n_samples + n_delay)[n_delay:]
+        rec = read(tag='data', processor='RP2', n_samples=sound.n_samples + n_delay)[n_delay:]
         rec = slab.Sound(rec)
     elif PROCESSORS.mode == "play_birec":  # read data for left and right ear from buffer
-        rec_l = read(tag='datal', proc='RP2', n_samples=sound.n_samples + n_delay)[n_delay:]
-        rec_r = read(tag='datar', proc='RP2', n_samples=sound.n_samples + n_delay)[n_delay:]
+        rec_l = read(tag='datal', processor='RP2', n_samples=sound.n_samples + n_delay)[n_delay:]
+        rec_r = read(tag='datar', processor='RP2', n_samples=sound.n_samples + n_delay)[n_delay:]
         rec = slab.Binaural([rec_l, rec_r])
     else:
         raise ValueError("Setup must be initialized in mode 'play_rec' or 'play_birec'!")

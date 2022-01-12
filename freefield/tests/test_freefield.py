@@ -73,7 +73,7 @@ def test_localization_test():
     freefield.calibrate_camera(freefield.all_leds(), n_reps=1, n_images=1)
 
     # calibrate the speakers
-    signal = slab.Sound.chirp(duration=5000)
+    signal = slab.Sound.chirp(duration=1.0, samplerate=48000)
     fbank = slab.Filter.equalizing_filterbank(signal, signal)
     for i in range(len(freefield.SPEAKERS)):
         freefield.SPEAKERS[i].level = 1

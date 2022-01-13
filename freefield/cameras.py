@@ -164,8 +164,8 @@ class FlirCams(Cameras):
                 time.sleep(0.1)
                 image_result = cam.GetNextImage()
                 if image_result.IsIncomplete():
-                    raise ValueError(f'Image incomplete: image status
-                                     {image_result.GetImageStatus()}')
+                    raise ValueError(f'Image incomplete: image status'
+                                     '{image_result.GetImageStatus()}')
                 image = image_result.Convert(
                     PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
                 image = image.GetNDArray()

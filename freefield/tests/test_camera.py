@@ -11,7 +11,7 @@ class VirtualCam(Cameras):
         self.n_cams = n_cams
         test_image = self.acquire_images(n_images=1)
         self.imsize = test_image.shape[0:2]
-        self.model = PoseEstimator("landmarks")
+        self.model = PoseEstimator()
 
     def acquire_images(self, n_images):
 

@@ -10,25 +10,26 @@ try:
     import PySpin
 except ModuleNotFoundError:
     PySpin = False
-from headpose import PoseEstimator
+try:
+    import headpose
+except ModuleNotFoundError:
+    headpose = False
 
-
-def initialize(kind="flir", pose_method="landmarks"):
+def initialize(kind="flir"):
     """
     Initialize connected cameras for head pose estimation.
     Arguments:
         kind (str): The type of camera used. If "flir", use the PySpin API to operate the cameras,
             if "webcam" use opencv.
-        pose_method (str): Method used for pose estimation. If "landmarks" use a convolutional network to find facial
-            features and map them to a model (requires pytorch), if "aruco" use ArUco-markers for pose estimation.
     Returns:
         (instance of Cameras): Object for handling the initialized cameras.
     """
     if kind.lower() == "flir":
-        return FlirCams(pose_method)
+        return FlirCams()
     elif kind.lower() == "webcam":
-        return WebCams(pose_method)
-
+        return WebCams()
+    else:
+        raise ValueError("Possible camera types are 'flir' or 'webcam'")
 
 class Cameras:
     def __init__(self):
@@ -52,6 +53,8 @@ class Cameras:
         """Acquire n images and compute head pose (elevation and azimuth). If
         convert is True use the regression coefficients to convert
         the camera into world coordinates. """
+        if self.model is None:
+            raise ImportError("Headpose estimation requires the headpose module (pip install headpose)!")
         images = self.acquire_images(n_images)  # take images
         pose = numpy.zeros([2, images.shape[2], images.shape[3]])
         for i_cam in range(images.shape[3]):
@@ -110,13 +113,16 @@ class Cameras:
 
 
 class FlirCams(Cameras):
-    def __init__(self, pose_method):
+    def __init__(self):
         if PySpin is False:
             raise ValueError("PySpin module required for working with FLIR cams not found! \n"
                              "You can download the .whl here: \n"
                              "https://www.flir.com/products/spinnaker-sdk/")
         super().__init__()
-        self.model = PoseEstimator(pose_method)
+        if headpose is False:
+            self.model = None
+        else:
+            self.model = headpose.PoseEstimator()
         self.system = PySpin.System.GetInstance()
         self.cams = self.system.GetCameras()
         self.n_cams = self.cams.GetSize()
@@ -158,8 +164,8 @@ class FlirCams(Cameras):
                 time.sleep(0.1)
                 image_result = cam.GetNextImage()
                 if image_result.IsIncomplete():
-                    raise ValueError('Image incomplete: image status %d ...'
-                                     % image_result.GetImageStatus())
+                    raise ValueError(f'Image incomplete: image status
+                                     {image_result.GetImageStatus()}')
                 image = image_result.Convert(
                     PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
                 image = image.GetNDArray()
@@ -168,7 +174,7 @@ class FlirCams(Cameras):
                 if image_data is not None:
                     image_data[:, :, i_image, i_cam] = image
                 else:
-                    [cam.EndAcquisition() for cam in self.cams]
+                    _ = [cam.EndAcquisition() for cam in self.cams]
                     return image
         [cam.EndAcquisition() for cam in self.cams]
         return image_data
@@ -185,9 +191,12 @@ class FlirCams(Cameras):
 
 class WebCams(Cameras):
 
-    def __init__(self, pose_method):
+    def __init__(self):
         super().__init__()
-        self.model = PoseEstimator(pose_method)
+        if headpose is False:
+            self.model = None
+        else:
+            self.model = headpose.PoseEstimator()
         self.cams = []
         stop = False
         while stop is False:

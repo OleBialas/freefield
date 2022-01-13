@@ -83,6 +83,13 @@ class Speaker:
     level: float = None  # the constant for level equalization
     filter: slab.Filter = None  # filter for equalizing the filters transfer function
 
+    def __repr__(self):
+        if (self.level is None) and (self.filter is None):
+            calibrated = "NOT calibrated"
+        else:
+            calibrated = "calibrated"
+        return f"<speaker {self.index} at azimuth {self.azimuth} and elevation {self.elevation}, {calibrated}>"
+
 
 def read_speaker_table():
     """

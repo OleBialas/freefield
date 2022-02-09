@@ -70,11 +70,11 @@ def test_equalize_speakers():
 def test_localization_test():
     freefield.initialize(setup="dome", default="loctest_freefield", camera=None)
     freefield.CAMERAS = VirtualCam(n_cams=numpy.random.randint(1, 4))
-    freefield.calibrate_camera(freefield.all_leds(), n_reps=1, n_images=1)
+    freefield.calibrate_camera(freefield.all_leds(), n_reps=1, n_images=1, show=False)
 
     # calibrate the speakers
     signal = slab.Sound.chirp(duration=1.0, samplerate=48828)
-    fbank = slab.Filter.equalizing_filterbank(signal, signal)
+    fbank = slab.Filter.equalizing_filterbank(signal, signal, length=3000)
     for i in range(len(freefield.SPEAKERS)):
         freefield.SPEAKERS[i].level = 1
         freefield.SPEAKERS[i].filter = fbank

@@ -422,7 +422,7 @@ def play_warning_sound(duration=.5, speaker=23):
     play()
 
 
-def calibrate_camera(speakers, n_reps=1, n_images=5):
+def calibrate_camera(speakers, n_reps=1, n_images=5, show=True):
     """
     Calibrate all cameras by lighting up a series of LEDs and estimate the pose when the head is pointed
     towards the currently lit LED. This results in a list of world and camera coordinates which is used to
@@ -449,7 +449,7 @@ def calibrate_camera(speakers, n_reps=1, n_images=5):
         wait_for_button()
         camera_coordinates.append(CAMERAS.get_head_pose(average_axis=1, convert=False, n_images=n_images))
         write(tag="bitmask", value=0, processors=speaker.digital_proc)
-    CAMERAS.calibrate(world_coordinates, camera_coordinates, plot=True)
+    CAMERAS.calibrate(world_coordinates, camera_coordinates, plot=show)
 
 
 def calibrate_camera_no_visual(speakers, n_reps=1, n_images=5):

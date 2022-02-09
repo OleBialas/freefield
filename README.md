@@ -3,6 +3,8 @@
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-brightgreen.svg)](https://github.com/OleBialas/freefield/graphs/commit-activity)
 ![PyPI pyversions](https://img.shields.io/badge/python-%3E%3D3.6-blue)
 ![PyPI license](https://img.shields.io/badge/license-MIT-brightgreen)
+[![DOI](https://zenodo.org/badge/195776894.svg)](https://zenodo.org/badge/latestdoi/195776894)
+
 
 The code in this package was written to conduct experiments using a psychoacoustics setup which consists of 48 loudspeakers and 4 cameras in a hemi-anaechoic room. The loudspeakers are driven by two digital signal processors
 from Tucker-Davis Technologies (TDT). While large parts of this package are tailored to one specific experimental

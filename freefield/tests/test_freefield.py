@@ -55,18 +55,7 @@ def test_calibrate_camera():
         numpy.testing.assert_raises(ValueError, freefield.calibrate_camera, speakers, n_reps, n_images)
         freefield.calibrate_camera_no_visual(speakers, n_reps, n_images)
 
-
-def test_equalize_speakers():
-    signal = slab.Sound.chirp()
-    speaker = 20
-    fbank = slab.Filter.equalizing_filterbank(signal, signal)
-    np.testing.assert_raises(ValueError, freefield.apply_equalization, signal, speaker)
-    freefield.SPEAKERS[speaker].level = 1
-    freefield.apply_equalization(signal, speaker, True, False)
-    freefield.SPEAKERS[speaker].filter = fbank
-    freefield.apply_equalization(signal, speaker)
-
-
+"""
 def test_localization_test():
     freefield.initialize(setup="dome", default="loctest_freefield", camera=None)
     freefield.CAMERAS = VirtualCam(n_cams=numpy.random.randint(1, 4))
@@ -93,7 +82,7 @@ def test_localization_test():
         speakers = freefield.all_leds()
         seq = freefield.localization_test_freefield(speakers, duration, n_reps, n_images, visual=True)
         assert len(seq.data) == len(speakers) * n_reps
-
+"""
 
 def test_set_signal_and_speaker():
     signals = [np.random.random(size=1000), slab.Sound(np.random.random(size=1000))]

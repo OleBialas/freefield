@@ -74,10 +74,10 @@ def test_localization_test():
 
     # calibrate the speakers
     signal = slab.Sound.chirp(duration=1.0, samplerate=48828)
-    fbank = slab.Filter.equalizing_filterbank(signal, signal, length=3000)
-    for i in range(len(freefield.SPEAKERS)):
-        freefield.SPEAKERS[i].level = 1
-        freefield.SPEAKERS[i].filter = fbank
+    fbank = slab.Filter.equalizing_filterbank(signal, signal)
+    for i in range(47):
+        freefield.pick_speakers(i)[0].level=1
+        freefield.pick_speakers(i)[0].filter = fbank
 
     for _ in range(5):
         n_speakers = numpy.random.randint(2, 10)

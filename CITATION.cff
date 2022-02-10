@@ -2,7 +2,7 @@
 # Visit https://bit.ly/cffinit to generate yours today!
 
 cff-version: 1.2.0
-title: freefield
+title: freefield - experimental control for psychoacoustics
 message: >-
   If you use this software, please cite it using the
   metadata from this file.
@@ -14,4 +14,4 @@ authors:
     email: ole.bialas@posteo.de
 doi: 10.5281/zenodo.6027388
 url: "https://github.com/OleBialas/freefield.git"
-date-released: 09-02-22
+date-released: 2022-02-09

@@ -759,3 +759,10 @@ def play_and_record(speaker, sound, compensate_delay=True, compensate_attenuatio
         else:
             rec.level = sound.level
     return rec
+
+def set_logger(level):
+    try:
+        logger = logging.getLogger()
+        eval('logger.setLevel(logging.%s)' %level.upper())
+    except AttributeError:
+        raise AttributeError("Choose from 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'")

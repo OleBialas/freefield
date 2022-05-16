@@ -213,8 +213,10 @@ def wait_to_finish_playing(proc="all", tag="playback"):
     elif isinstance(proc, str):
         proc = [proc]
     logging.info(f'Waiting for {tag} on {proc}.')
+    set_logger('warning')
     while any(PROCESSORS.read(tag, n_samples=1, proc=p) for p in proc):
         time.sleep(0.01)
+    set_logger('info')
     logging.info('Done waiting.')
 
 
@@ -765,10 +767,12 @@ def set_logger(level):
     """
     Set the logger to a specific level.
     Parameters:
-        level: level to set the logger at. Can be 'DEBUG', 'INFO', 'WARNING', 'ERROR' or 'CRITICAL'
+        level: logging level. Only events of this level and above will be tracked. Can be 'DEBUG', 'INFO', 'WARNING',
+         'ERROR' or 'CRITICAL'
     """
     try:
         logger = logging.getLogger()
         eval('logger.setLevel(logging.%s)' %level.upper())
+        print('Logger set to %s.' %level.upper())
     except AttributeError:
         raise AttributeError("Choose from 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'")

@@ -422,6 +422,7 @@ def play_warning_sound(duration=.5, speaker=23):
     play()
 
 
+
 def calibrate_camera(speakers, n_reps=1, n_images=5, show=True):
     """
     Calibrate all cameras by lighting up a series of LEDs and estimate the pose when the head is pointed
@@ -759,3 +760,17 @@ def play_and_record(speaker, sound, compensate_delay=True, compensate_attenuatio
         else:
             rec.level = sound.level
     return rec
+
+def set_logger(level):
+    """
+    Set the logger to a specific level.
+    Parameters:
+        level: logging level. Only events of this level and above will be tracked. Can be 'DEBUG', 'INFO', 'WARNING',
+         'ERROR' or 'CRITICAL'
+    """
+    try:
+        logger = logging.getLogger()
+        eval('logger.setLevel(logging.%s)' %level.upper())
+        # print('Logger set to %s.' %level.upper())
+    except AttributeError:
+        raise AttributeError("Choose from 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'")
